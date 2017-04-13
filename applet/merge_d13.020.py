@@ -192,6 +192,8 @@ if __name__ == '__main__':
     # Open the applet symbols
     sapplet = Symbols("%s.sym" % sys.argv[2])
 
+    merger.setword(0x08047264, sapplet.getadr("led_process_replacement"))
+
     merger.hookstub(0x0809661e,  # USB manufacturer string handler function.
                     sapplet.getadr("getmfgstr"))
     merger.hookstub(0x080226d2,  # startup_botline
