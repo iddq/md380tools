@@ -1,7 +1,18 @@
 
-#MKLISTING=1
+MKLISTING=1
 
 FW ?= D13_020
+
+ifeq (,$(wildcard mark.tmp))
+	# not exists
+  PROBLEM=0	
+else
+  old_build := $(shell cat mark.tmp)
+
+  ifneq "$(old_build)" "$(FW)"
+    PROBLEM=1
+  endif	
+endif
 
 ifeq ($(FW),D02_032)
     INC_DISPFLIP=1
@@ -15,17 +26,19 @@ else ifeq ($(FW),D13_020)
     SRCVERSION=d13.020
     PATCHDIR=d13.020
     MERGEBASE=0x0809b000
+    INC_DISPINIT=1
 else ifeq ($(FW),S13_020)
     FWDEFINE=FW_S13_020
     SRCVERSION=s13.020
     PATCHDIR=s13.020
     MERGEBASE=0x809c000
+    INC_DISPINIT=1
 else 
 $(error select firmware version)
 endif
 
-SRCS  = main.o printf.o dmesg.o gfx.o stm32f4xx_it.o system_stm32f4xx.o addl_config.o 
-SRCS += spiflash.o usb.o menu.o rtc_timer.o beep_process.o usersdb.o os.o aes.o
+SRCS  = main.o printf.o dmesg.o gfx.o system_stm32f4xx.o addl_config.o 
+SRCS += spiflash.o usb.o menu.o rtc_timer.o usersdb.o os.o aes.o
 SRCS += ambe.o  dmr.o 
 SRCS += display.o
 SRCS += console.o
@@ -36,17 +49,22 @@ SRCS += keyb.o
 SRCS += radiostate.o
 SRCS += mbox.o
 SRCS += syslog.o
+SRCS += lastheard.o
 SRCS += etsi.o
 SRCS += sms.o
+SRCS += beep.o
+SRCS += irq_handlers.o # DL4YHF 2017-01-06
+SRCS += timer.o
+
 ifdef INC_DISPFLIP
 SRCS +=  dispflip.o  # display flip is included @ d13.020
 endif
 ifdef INC_I2C
 SRCS +=  i2c.o #  ALPU Licence Check is disabled, so we have no i2c
 endif
-
-PROJ_NAME=main
-
+ifdef INC_DISPINIT
+SRCS +=  dispinit.o
+endif
 
 ###################################################
 
@@ -77,7 +95,9 @@ CFLAGS += -Iinc -Ilib -Ilib/inc -I.
 CFLAGS += -Ilib/inc/core -Ilib/inc/peripherals
 CFLAGS += -D "MD380_$(subst .,_,$(SRCVERSION))"  # ISO C99 requires whitespace after
 
-SRCS += lib/startup_stm32f4xx.s # add startup file to build
+# DL4YHF: Had to modify the name of the startup file, because it was 
+#  overwritten by somehing else (*.s = *.S under windows).
+SRCS += lib/startup_stm32f4xx_asm.S
 
 OBJS = $(SRCS:.c=.o)
 
@@ -86,34 +106,53 @@ OBJS = $(SRCS:.c=.o)
 
 .PHONY: lib proj pre
 
-all: lib proj wrapped	
+all: mark experiment.bin
+	
+.PHONY: mark
+mark:
+ifeq "$(PROBLEM)" "1"
+	@echo "=================="
+	@echo "problem, make clean first"
+	@echo "=================="
+	@exit 1
+else	
+	echo $(FW) >mark.tmp
+endif	
 
-experiment.img: 
-	"${MAKE}" -C ../patches/$(PATCHDIR) patched.bin
-	cp ../patches/$(PATCHDIR)/patched.img ./experiment.img
-
-
+# strange dependencies (migrate down to lib makefile if need be)
 lib: src/version.h config.h
-	"${MAKE}" -C lib
+	"${MAKE}" -C lib libstm32f4.a
 
-proj: 	$(PROJ_NAME).elf experiment.img
-	# use a fresh experiment.img
-	"${MAKE}" -C ../patches/$(PATCHDIR) clean all
-	cp ../patches/$(PATCHDIR)/patched.img ./experiment.img
-	python2 merge_$(SRCVERSION).py experiment.img $(PROJ_NAME).img $(MERGEBASE)
+.PHONY: base.img
+base.img:
+	"${MAKE}" -C ../patches/$(PATCHDIR) patched.img
+	
+merged.img: applet.img base.img   
+	cp ../patches/$(PATCHDIR)/patched.img ./merged.img
+	python2 merge_$(SRCVERSION).py merged.img applet.img $(MERGEBASE)
+
+#patched.bin: proj
+#	"${MAKE}" -C ../patches/$(PATCHDIR) patched.img
+#	cp ../patches/$(PATCHDIR)/patched.img ./patched.bin
 
 #The wrapped file is the one that works with the Windows updater.
-wrapped: lib proj
-	../md380-fw --wrap experiment.img experiment.bin
-#This flashes from unix.
-flash: wrapped
-	../md380-dfu upgrade experiment.bin
+wrapped.bin: merged.img
+	../md380-fw --wrap merged.img wrapped.bin
 
-$(SRCS): config.h src/*.h | lib
-$(PROJ_NAME).elf: $(SRCS)
+experiment.bin: wrapped.bin
+	cp wrapped.bin experiment.bin
+	
+##This flashes from unix. (deprecated)
+#flash: wrapped
+#	../md380-dfu upgrade experiment.bin
+
+$(SRCS): config.h src/*.h | lib	
+applet.elf: $(SRCS)
 	$(CC) $(CFLAGS) -Wl,--no-wchar-size-warning -Wl,-Map,$(basename $@).map $^ -o $@ -Llib -lstm32f4 -Xlinker --just-symbols=src/symbols_$(SRCVERSION)
-	$(OBJCOPY) -O binary $(PROJ_NAME).elf $(PROJ_NAME).img
-	$(OBJDUMP) -t main.elf >main.img.sym
+	
+%.img: %.elf	
+	$(OBJDUMP) -t $< >$(basename $@).img.sym
+	$(OBJCOPY) -O binary $< $@
 
 #Temporary file containing the build date.
 #Might use version numbers when we're ready for releases.
@@ -124,7 +163,7 @@ src/version.h: src/*.c
 clean:
 	"${MAKE}" -C ../patches/$(PATCHDIR) clean
 	"${MAKE}" -C lib clean
-	rm -f *.img *.lst *.bin *.elf *.hex *.o *~ *.sym src/*~ src/version.h *.map
+	rm -f *.img *.lst *.bin *.elf *.hex *.o *~ *.sym src/*~ src/version.h *.map *.tmp
 
 image_D02:
 	"${MAKE}" FW=D02_032 all  

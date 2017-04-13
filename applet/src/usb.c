@@ -16,7 +16,6 @@
 */
 
 
-#include <stdio.h>
 #include <string.h>
 
 #include "printf.h"
@@ -28,6 +27,7 @@
 #include "gfx.h"
 #include "spiflash.h"
 #include "string.h"
+#include "syslog.h"
 
 int usb_upld_hook(void* iface, char *packet, int bRequest, int something){
   /* This hooks the USB Device Firmware Update upload function,
@@ -293,7 +293,7 @@ void hookusb(){
   
   dnld_tohook = get_md380_dnld_tohook_addr();
   if (dnld_tohook){
-  * dnld_tohook = (int) usb_dnld_hook;
+    * dnld_tohook = (int) usb_dnld_hook;
   } else {
     printf("can't find dnld_tohook_addr\n");
   }  
@@ -351,9 +351,10 @@ const char *getmfgstr(int speed, long *len){
   return loadusbstr(md380_usbstring,buffer,len);
 }
 
-void loadfirmwareversion_hook(){
-  memcpy(md380_usbbuf,VERSIONDATE,22);
-  return;
+void loadfirmwareversion_hook()
+{
+    memcpy(print_buffer, VERSIONDATE, 22);
+    return;
 }
 
 //Must be const, because globals will be wacked.

@@ -256,29 +256,110 @@ static void putcp(void* p, char c)
     *(*((char**) p))++ = c;
 }
 
-
-
-void tfp_sprintf(char* s,char *fmt, ...)
-	{
-	va_list va;
-	va_start(va,fmt);
-	tfp_format(&s,putcp,fmt,va);
-	putcp(&s,0);
-	va_end(va);
-	}
-
-
-static void wide_putch(void* p, char c)
-{
-    *(*((wchar_t**) p))++ = c;
-}
-
-void wide_sprintf(wchar_t* ws, const char* fmt, ...)
+void tfp_sprintf(char* s, char *fmt, ...)
 {
     va_list va;
     va_start(va, fmt);
-    tfp_format(&ws, wide_putch, fmt, va);
-    wide_putch(&ws,0);
-    va_end(va);    
+    tfp_format(&s, putcp, fmt, va);
+    putcp(&s, 0);
+    va_end(va);
 }
 
+
+//static void wide_putch(void* p, char c)
+//{
+//    *(*((wchar_t**) p))++ = c;
+//}
+
+typedef struct {
+    void *buffer ;
+    int space ;
+} printf_t ;
+
+static void safe_putbuf_w(void* vpoi, char c)
+{
+    printf_t *ps = vpoi ;
+    
+    if( ps->space <= 0 ) {
+        return ;
+    }
+
+    wchar_t **p = (wchar_t**)&ps->buffer ;
+    
+    **p = c ;
+    (*p)++ ;
+    
+    ps->space-- ;
+}
+
+static void safe_putbuf(void* vpoi, char c)
+{
+    printf_t *ps = vpoi ;
+    
+    if( ps->space <= 0 ) {
+        return ;
+    }
+
+    char **p = (char**)&ps->buffer ;
+    
+    **p = c ;
+    (*p)++ ;
+    
+    ps->space-- ;
+}
+
+void va_snprintfw(wchar_t *buf, int sz, const char* fmt, va_list va )
+{
+    if( sz < 1 ) {
+        return ;
+    }
+    
+    sz -= 1 ;
+    
+    printf_t ps ;
+    ps.buffer = buf ;
+    ps.space = sz ;
+    
+    tfp_format(&ps, safe_putbuf_w, fmt, va);
+    safe_putbuf_w(&ps, 0);
+    
+    buf[sz] = 0 ;
+}
+
+void va_snprintf(char *buf, int sz, const char* fmt, va_list va )
+{
+    if( sz < 1 ) {
+        return ;
+    }
+    
+    sz -= 1 ;
+    
+    printf_t ps ;
+    ps.buffer = buf ;
+    ps.space = sz ;
+    
+    tfp_format(&ps, safe_putbuf, fmt, va);
+    safe_putbuf(&ps, 0);
+    
+    buf[sz] = 0 ;
+}
+
+int snprintfw(wchar_t* buf, int sz, const char* fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    va_snprintfw(buf, sz, fmt, va );    
+    va_end(va);      
+    
+    return 0 ; // TODO if we want to be compatible.
+}
+
+int snprintf(char* buf, int sz, const char* fmt, ...)
+{
+    va_list va;
+    va_start(va, fmt);
+    va_snprintf(buf, sz, fmt, va );    
+    va_end(va);      
+    
+    return 0 ; // TODO if we want to be compatible.
+}

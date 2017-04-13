@@ -2,7 +2,6 @@
    \brief MD380 callback functions.
 */
 
-//#include <stdio.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -17,35 +16,6 @@ void wstrhex(wchar_t *, long);
 
 
 
-// md380 gfx
-void gfx_drawtext(wchar_t *str,          //16-bit, little endian.
-		  short sx, short sy, //Source coords, maybe?
-		  short x, short y,   //X and Y position
-		  int maxlen);
-void gfx_drawbmp(char *bmp,
-		 int x,
-		 int y);
-
-void gfx_drawtext2(wchar_t *str,    //16-bit, little endian.
-                   int x, int y,   //X and Y position
-                   int maxlen);
-
-// xlen: if curpos > xlen print ".." instead.
-extern void gfx_chars_to_display(wchar_t *str, int x, int y, int xlen);
-
-
-
-void gfx_set_bg_color(int color);
-void gfx_set_fg_color(int color);
-
-/**
- * 
- * @param x_from 0...159
- * @param y_from 0...127
- * @param x_to   0...159
- * @param y_to   0...127
- */
-void gfx_blockfill(int x_from, int y_from, int x_to, int y_to);
 
 // md380 dmr
 
@@ -69,8 +39,8 @@ extern char* const dmr_squelch_firstthing[];
 
 
 //Pointer to the buffer that stores the top and bottom line of the boot screen text.
-extern char toplinetext[]; // [20] should be wchar_t[10]
-extern char botlinetext[]; // [20] should be wchar_t[10]
+extern wchar_t toplinetext[10]; // 0-term
+extern wchar_t botlinetext[10]; // 0-term
 
 //ROM copy of the welcome bitmap.
 extern char welcomebmp[];
@@ -87,24 +57,17 @@ int usb_dnld_handle();
 
 // This is the target address of the Application's DFU engine.
 extern char *	md380_dfutargetadr;
+extern char * 	md380_dfu_target_adr[]; // same as md380_dfutargetadr TODO: fix
 extern char   	md380_packet[];
 extern int    	md380_packetlen[];
 extern int    	md380_blockadr[];
 extern char   	md380_dfu_state[];
-extern char * 	md380_dfu_target_adr[];
 extern char   	md380_thingy2[];
 extern char   	md380_usbstring[];
-extern wchar_t 	md380_usbbuf[];
 
-// md380_spiflash
-int     md380_spiflash_read(void *dst, long adr, long len);
-void    md380_spiflash_write(void *dst, long adr, long len);
-int     md380_spiflash_security_registers_read(void *dst, long adr, long len);
-void    md380_spiflash_block_erase64k(uint32_t);
-void    md380_spiflash_sektor_erase4k(uint32_t);
-void    md380_spiflash_enable();
-void    md380_spiflash_disable();
-void    md380_spiflash_wait();
+// title for menus, version in info screen
+extern wchar_t 	print_buffer[];
+
 uint8_t md380_spi_sendrecv(INT8U data); // SPI1
 
 // md380_i2c // stolen from ../../lib/src/peripherals/stm32f4xx_i2c.c
@@ -162,8 +125,6 @@ uint8_t   md380_menu_id;
 
 extern wchar_t	  	md380_wt_programradio[];  // menutext <- menu_entry_programradio
 
-extern uint8_t     	md380_menu_memory[];
-
 //! program_radio_unprohibited (menu entry) ... bulding site is an struct
 extern uint8_t md380_program_radio_unprohibited[];
 
@@ -199,17 +160,22 @@ int ambe_decode_wav(int *a1, signed int eighty, char *bitbuffer,
 		    int a4, short a5, short a6, int a7);
 
 
-void Write_Command_2display(uint8_t data);
-void Write_Data_2display(uint8_t data);
+void md380_Write_Command_2display(uint8_t data);
+void md380_Write_Data_2display(uint8_t data);
+
+void md380_GPIO_SetBits(int addr, uint16_t GPIO_Pin); 
+void md380_GPIO_ResetBits(int addr, uint16_t GPIO_Pin);
+
+
 
 //! Functions and Variabes regarding the beep_
 // not yet known ;)
-extern uint32_t  beep_process_unkown[];
+extern uint32_t  bp_freq[];
 
 //! useful firmware functions
 wchar_t * md380_itow(wchar_t *, int value);
 void      md380_RTC_GetDate(uint32_t RTC_Format, RTC_DateTypeDef *RTC_DateStruct);
-void      md380_RTC_GetTime(uint32_t RTC_Format, RTC_TimeTypeDef* RTC_TimeStruct);
+void      md380_RTC_GetTime(uint32_t RTC_Format, RTC_TimeTypeDef *RTC_TimeStruct);
 
 // stuff to handle different display (flip (380/390) type
 extern uint8_t  const md380_radio_config_bank2[]; // from spiflash Security Registers
@@ -218,7 +184,7 @@ void md380_copy_spiflash_security_bank2_to_ram(void);
 
 // rtc_timer process stuff ( user interface task)
 // menu no exit ....
-uint8_t md380_f_4225_operatingmode;
+uint8_t gui_opmode1;
 
 
 // debug and training stuff
@@ -226,7 +192,7 @@ void md380_f_4137();
 void md380_f_4520();
 void md380_f_4098();
 void md380_f_4102();
-void md380_f_4225();
+void f_4225();
 
 // major display driver for popup during RX/TX
 void F_4315();

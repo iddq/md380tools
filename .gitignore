@@ -7,6 +7,10 @@ __pycache__/
 *.o
 *.a
 
+*.tmp
+*.lst
+*.map
+
 # Distribution / packaging
 .Python
 env/
@@ -66,18 +70,18 @@ target/
 *.elf
 version.h
 
+# Output from Radare2 / disassembly converted into HTML
+/annotations/d13.020/listing.txt
+/annotations/d13.020/listing.htm
+
 # user/repeater lists
-db/users.csv
-db/users.json
-db/repeaters.csv
-db/repeaters.json
-data
-data.csv
+/db/users.csv
+/db/repeaters.csv
+/db/custom.csv
+/db/stripped.csv
+/db/users.json
+/db/bmgroups.json
+/db/repeaters.json
 
 # firmware downloads
 firmware/dl
-
-# applet intermeds
-applet/*.lst
-applet/*.map
-annotations/d13.020/*.lst

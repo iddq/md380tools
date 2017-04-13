@@ -2412,7 +2412,7 @@ CCa 0x801cc46 md380_menu_0x2001d3ef
 CCa 0x801ce56 md380_menu_0x2001d3ef
 CCa 0x801ce64 md380_menu_0x2001d3ef
 af+ 0x801ced2 40 F_993
-af+ 0x801cf1c 18 gfx_chars_to_display
+af+ 0x801cf1c 18 gfx_drawtext2
 af+ 0x801cf2e 18 F_799
 af+ 0x801cf40 16 F_4169
 af+ 0x801cf50 30 F_4291
@@ -3406,7 +3406,7 @@ CCa 0x802af98 SystemConfig
 CCa 0x802af9c ConfigData + 0xf  (byte) Beep_Process
 af+ 0x802b958 236 F_5027
 af+ 0x802ba44 52 F_293
-af+ 0x802ba78 16 F_294
+af+ 0x802ba78 16 bp_set_freq
 af+ 0x802ba88 32 F_295
 af+ 0x802baa8 80 F_296
 af+ 0x802baf8 72 F_297

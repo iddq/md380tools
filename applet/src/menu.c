@@ -9,7 +9,6 @@
 
 #include "menu.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #include "debug.h"
@@ -22,6 +21,11 @@
 #include "addl_config.h"
 #include "radio_config.h"
 #include "usersdb.h"
+#include "util.h"
+#include "printf.h"
+#include "keyb.h"
+
+#include "config.h"  // need to know CONFIG_DIMMED_LIGHT (defined in config.h since 2017-01-03)
 
 const static wchar_t wt_addl_func[]         = L"MD380Tools";
 const static wchar_t wt_datef[]             = L"Date format";
@@ -32,10 +36,11 @@ const static wchar_t wt_disable[]           = L"Disable";
 const static wchar_t wt_enable[]            = L"Enable";
 const static wchar_t wt_rbeep[]             = L"M. RogerBeep";
 
-const static wchar_t wt_bootscr[]           = L"Boot Screen";
-const static wchar_t wt_bootscr_enable[]    = L"Enable";
-const static wchar_t wt_bootscr_quick[]     = L"Quick";
-const static wchar_t wt_bootscr_disable[]   = L"Disable";
+const static wchar_t wt_bootopts[]          = L"Boot Options";
+const static wchar_t wt_demoscr[]           = L"Demo Screen";
+const static wchar_t wt_demoscr_enable[]    = L"Enable";
+const static wchar_t wt_demoscr_disable[]   = L"Disable";
+const static wchar_t wt_splash[]            = L"Splash Mode";
 
 const static wchar_t wt_userscsv[]          = L"UsersCSV";
 const static wchar_t wt_datef_original[]    = L"YYYY/MM/DD";
@@ -51,90 +56,73 @@ const static wchar_t wt_no_w25q128[]        = L"No W25Q128";
 const static wchar_t wt_experimental[]      = L"Experimental";
 const static wchar_t wt_micbargraph[]       = L"Mic bargraph";
 
-const static wchar_t wt_backlight[]       = L"Backlight";
-const static wchar_t wt_bl30[]       = L"30 sec";
-const static wchar_t wt_bl60[]       = L"60 sec";
 
-
-struct MENU {
-  const wchar_t  *menu_title; // [0]
-  void    *unknownp; // [4]
-  uint8_t numberof_menu_entries; // [8]
-  uint8_t unknown_00;
-  uint8_t unknown_01;
-}; // should be: sizeof == 0xc = 12
-//TODO: determine if this works due to word alignment.
-
-
-/* This hooks a function that is called a lot during menu processing.
-   Its exact purpose is unknown, but I'm working on that.
- */
-void *main_menu_hook(void *menu){
-#if 0
-  void *menustruct;
-
-//  printf("main_menu() ");
-//  printhex(menu,32);
-//  printf("\n");
-
-
-  switch(* ((int*)menu)){
-  case 0x0b:
-    //printf("Exiting menu.\n");
-    break;
-  case 0x24:
-    //Third word of the parameter is a structure with
-    //more entries.
-    menustruct=(void*) *((int*)menu + 2);
-
-    printf("Menu struct: @0x%08x\n",
-	   menustruct);
-    printf("Item %5d/%5d selected. %s\n",
-	   (int) *((unsigned short*) (menustruct+0x42)),
-	   (int) *((unsigned short*)menustruct),
-	   "test");
-
-
-    //printhex(*((int*) menu+2),128);
-    //printf("\n");
-
-    /*
-
-Main menu:
-Menu struct: @0x20001398
-06000000 Total Entries
-02000000 Selected Page Index
-04000000 4a000000 00000000 91000000 8c0f0d08 00000000 3280ff00
-1414ff00 c0c0c000 c0c0c000 00000000 ffffff00 ffffff00 80808000 00000500
-                                                                   \--/
-                                                                Selected item
-00000000 4a001600 00436f6e 74616374 73006361 27001600 00536361 6e001600
-                    \--Contacts begins here.
-0a000c00 27001600 005a6f6e 65006c20 0a000c00 0b006573 49001600
-
-Contacts Menu, last Entry:
-Menu struct: @0x20001390
-e4020000 Total Entries
-e0020000 Selected Page Index
-         04000000 9c000000 00000000 91000000 8c0f0d08 00000000 3280ff00
-1414ff00 c0c0c000 c0c0c000 00000000 ffffff00 ffffff00 80808000 0000e302
-                                                                   \--/
-                                                                Selected item
-00000000 7d001600 00547269 2d537461 74652028 4c322900 41001600 004c6f63
-                    \--First contact entry starts here.
-616c2039 00436f6e 09000b00 3b001600 00444d52 204e4100 09000b00
-     */
-    break;
-  default:
-    //do nothing
-    break;
-  }
+const static wchar_t wt_backlight[]         = L"Backlight Tmr";
+const static wchar_t wt_blunchanged[]       = L"Unchanged";
+const static wchar_t wt_bl5[]               = L"5 sec";
+const static wchar_t wt_bl30[]              = L"30 sec";
+const static wchar_t wt_bl60[]              = L"60 sec";
+const static wchar_t wt_backlight_menu[]    = L"Backlight";
+#ifndef  CONFIG_DIMMED_LIGHT    // want 'dimmed backlight', two adjustable intensities ?
+# define CONFIG_DIMMED_LIGHT 0  // guess not (unless defined AS ONE in config.h)
 #endif
-  return main_menu(menu);
-}
+#if( CONFIG_DIMMED_LIGHT ) // support pulse-width modulated backlight ?
+const static wchar_t wt_bl_intensity_lo[]   = L"Level Low";
+const static wchar_t wt_bl_intensity_hi[]   = L"Level High";
+#define NUM_BACKLIGHT_INTENSITIES 10 /* number of intensity steps (0..9) for the menu */
+const static wchar_t *wt_bl_intensity[NUM_BACKLIGHT_INTENSITIES] = 
+ { L"0 (off)", L"1 (lowest)", L"2", L"3 (medium)", L"4", 
+   L"5",       L"6",          L"7", L"8",          L"9 (bright)" }; 
+#endif // CONFIG_DIMMED_LIGHT ?
 
+const static wchar_t wt_cp_override[]       = L"CoPl Override";
+const static wchar_t wt_splash_manual[]     = L"Disabled";
+const static wchar_t wt_splash_callid[]     = L"Callsign+DMRID";
+const static wchar_t wt_splash_callname[]   = L"Callsign+Name";
 
-struct menu_mem_base_type {
+const static wchar_t wt_cp_override_dmrid[] = L"ID Override";
+
+const static wchar_t wt_config_reset[] = L"Config Reset";
+const static wchar_t wt_config_reset_doit[] = L"Config Reset2";
+
+const static wchar_t wt_sidebutton_menu[]   = L"Side Buttons";
+const static wchar_t wt_button_top_press[]  = L"Top Pressed";
+const static wchar_t wt_button_bot_press[]  = L"Bottom Pressed";
+const static wchar_t wt_button_top_held[]   = L"Top Held";
+const static wchar_t wt_button_bot_held[]   = L"Bottom Held";
+const static wchar_t wt_button_func_set[]   = L"Function Set";
+const static wchar_t wt_button_unassigned[] = L"Unassigned";
+const static wchar_t wt_button_alert_tone[] = L"All Tone Tog";
+const static wchar_t wt_button_emerg_on[]   = L"Emergency On";
+const static wchar_t wt_button_emerg_off[]  = L"Emergency Off";
+const static wchar_t wt_button_power[]      = L"High/Low Pwr";
+const static wchar_t wt_button_monitor[]    = L"Monitor";
+const static wchar_t wt_button_nuisance[]   = L"Nuisance Del";
+const static wchar_t wt_button_ot1[]        = L"One Touch 1";
+const static wchar_t wt_button_ot2[]        = L"One Touch 2";
+const static wchar_t wt_button_ot3[]        = L"One Touch 3";
+const static wchar_t wt_button_ot4[]        = L"One Touch 4";
+const static wchar_t wt_button_ot5[]        = L"One Touch 5";
+const static wchar_t wt_button_ot6[]        = L"One Touch 6";
+const static wchar_t wt_button_rep_talk[]   = L"Talkaround";
+const static wchar_t wt_button_scan[]       = L"Scan On/Off";
+const static wchar_t wt_button_squelch[]    = L"Squelch Tight";
+const static wchar_t wt_button_privacy[]    = L"Privacy On/Off";
+const static wchar_t wt_button_vox[]        = L"Vox On/Off";
+const static wchar_t wt_button_zone[]       = L"Zone Inc.";
+const static wchar_t wt_button_zone_tog[]   = L"Zone Toggle";
+const static wchar_t wt_button_bat_ind[]    = L"Bat Indicator";
+const static wchar_t wt_button_man_dial[]   = L"Manual Dial";
+const static wchar_t wt_button_lone_work[]  = L"Lone wk On/Off";
+const static wchar_t wt_button_1750_hz[]    = L"1750hz Tone";
+const static wchar_t wt_button_bklt_en[]    = L"Toggle bklight";
+const static uint8_t button_functions[]     = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a,
+                                               0x0b, 0x0c, 0x0d, 0x0e, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1e,
+                                               0x1f, 0x26, 0x50};
+uint8_t button_selected = 0;
+uint8_t button_function = 0;
+
+typedef struct {
     const wchar_t* label ;  // [0]
     void* green ;           // [4]
     void* red ;             // [8]
@@ -145,13 +133,27 @@ struct menu_mem_base_type {
     uint8_t off17 ;         // [17]
     uint16_t unknown2 ;     // [18]
     // sizeof() == 20 (0x14)
-};
+} menu_entry_t ;
 
-typedef struct menu_mem_base_type menu_mem_base_t ;
 
-extern menu_mem_base_t md380_menu_mem_base[];
+typedef struct {
+  const wchar_t  *menu_title; // [0]
+  menu_entry_t *entries; // [4]
+  uint8_t numberof_menu_entries; // [8]
+  uint8_t unknown_00;
+  uint8_t unknown_01;
+  uint8_t filler ;
+} menu_t ; // sizeof() == 12
 
-#define MKTHUMB(adr) ((void(*))(((uint32_t)adr) | 0x1))
+extern menu_t md380_menu_memory[];
+
+extern menu_entry_t md380_menu_mem_base[];
+
+//Old macro, schedule for deletion.
+//#define MKTHUMB(adr) ((void(*))(((uint32_t)adr) | 0x1))
+//New macro, prints warnings where needed.
+#define MKTHUMB(adr) (printf(((int)adr)&1?"":"Warning, 0x%08x function pointer is even.\n",adr),(void(*))(((uint32_t)adr) | 0x1))
+
 
 void create_menu_entry_rev(int menuid, const wchar_t * label , void (*green_key)(), void  (*red_key)(), int e, int f ,int item_count) 
 {
@@ -164,6 +166,7 @@ void create_menu_entry_rev(int menuid, const wchar_t * label , void (*green_key)
 //    red_key = MKTHUMB(red_key);
     
 #ifdef TRACE_MENU
+#ifdef DEBUG    
     char lbl2[10];
     char *lp = (void*)label ;
     for(int i=0;i<10;i++) {
@@ -177,9 +180,10 @@ void create_menu_entry_rev(int menuid, const wchar_t * label , void (*green_key)
         }
     }
     lbl2[9] = 0 ;
-    
+
     void *gp = ((uint8_t*)green_key) - 1 ;
     PRINT("f menugreen.%s.%x 0 0x%x\n", lbl2, gp, gp );
+#endif
     
 #if 0    
     register uint32_t *sp asm("sp");   
@@ -221,7 +225,7 @@ void create_menu_entry_rev(int menuid, const wchar_t * label , void (*green_key)
 //        }
 //    }
     
-    struct menu_mem_base_type *poi = &md380_menu_mem_base[menuid];    
+    menu_entry_t *poi = &md380_menu_mem_base[menuid];    
     
     poi->label = label ;
     poi->green = green_key ;
@@ -241,6 +245,18 @@ void create_menu_entry_rev(int menuid, const wchar_t * label , void (*green_key)
 
 }
 
+uint8_t index_of(uint8_t value, uint8_t arr[], uint8_t len)
+{
+    uint8_t i = 0;
+    while(i < len)
+    {
+        if (arr[i] == value) return i;
+        i++;
+    }
+
+    return 0;
+}
+
 //void md380_create_menu_entry(int menuid, const wchar_t * label , void * green_key, void  * red_key, int e, int f ,int enabled) {
 //#ifdef DEBUG
 //  printf("0x%x Text: 0x%x GreenKey 0x%x RedKey 0x%x 0x%x 0x%x 0x%x\n", menuid,label,green_key,red_key,e,f,enabled);
@@ -252,19 +268,20 @@ void create_menu_entry_rev(int menuid, const wchar_t * label , void (*green_key)
 //  md380_create_menu_entry(menuid,label,green_key,red_key,e,f,enabled);
 //}
 
-struct MENU *get_menu_stackpoi()
+
+menu_t *get_menu_stackpoi()
 {
-    return ( void *) ((md380_menu_memory + ((md380_menu_depth) * sizeof(struct MENU))) + sizeof(struct MENU));
+    return &md380_menu_memory[md380_menu_depth+1];
 }
 
 void mn_create_single_timed_ack( const wchar_t *title, const wchar_t *label )
 {
-    struct MENU *menu_mem;
+    menu_t *menu_mem;
 
     menu_mem = get_menu_stackpoi();
     menu_mem->menu_title = title;
 
-    menu_mem->unknownp = &md380_menu_mem_base[md380_menu_id];
+    menu_mem->entries = &md380_menu_mem_base[md380_menu_id];
 
     menu_mem->numberof_menu_entries = 1;
     menu_mem->unknown_00 = 0;
@@ -275,10 +292,10 @@ void mn_create_single_timed_ack( const wchar_t *title, const wchar_t *label )
 
 void mn_submenu_init(const wchar_t *title)
 {
-    struct MENU *menu_mem = get_menu_stackpoi();
+    menu_t *menu_mem = get_menu_stackpoi();
     menu_mem->menu_title = title;
 
-    menu_mem->unknownp = &md380_menu_mem_base[md380_menu_id];
+    menu_mem->entries = &md380_menu_mem_base[md380_menu_id];
     menu_mem->numberof_menu_entries = 0;
     menu_mem->unknown_00 = 0;
     menu_mem->unknown_01 = 0;    
@@ -286,7 +303,7 @@ void mn_submenu_init(const wchar_t *title)
 
 void mn_submenu_add(const wchar_t * label, void (*func)())
 {
-    struct MENU *menu_mem = get_menu_stackpoi();
+    menu_t *menu_mem = get_menu_stackpoi();
     
     func = MKTHUMB(func);
     
@@ -297,7 +314,7 @@ void mn_submenu_add(const wchar_t * label, void (*func)())
 
 void mn_submenu_add_98(const wchar_t * label, void (*func)())
 {
-    struct MENU *menu_mem = get_menu_stackpoi();
+    menu_t *menu_mem = get_menu_stackpoi();
     
     func = MKTHUMB(func);
     
@@ -308,7 +325,7 @@ void mn_submenu_add_98(const wchar_t * label, void (*func)())
 
 void mn_submenu_add_8a(const wchar_t * label, void (*func)(), int enabled)
 {
-    struct MENU *menu_mem = get_menu_stackpoi();
+    menu_t *menu_mem = get_menu_stackpoi();
     
     func = MKTHUMB(func);
     
@@ -319,7 +336,7 @@ void mn_submenu_add_8a(const wchar_t * label, void (*func)(), int enabled)
 
 void mn_submenu_finalize()
 {
-    struct MENU *menu_mem = get_menu_stackpoi();
+    menu_t *menu_mem = get_menu_stackpoi();
     
     for (int i = 0; i < menu_mem->numberof_menu_entries; i++) { 
         // conflicts with 'selected' icon.
@@ -330,7 +347,7 @@ void mn_submenu_finalize()
 
 void mn_submenu_finalize2()
 {
-    struct MENU *menu_mem = get_menu_stackpoi();
+    menu_t *menu_mem = get_menu_stackpoi();
     
     for (int i = 0; i < menu_mem->numberof_menu_entries; i++) { 
         md380_menu_mem_base[md380_menu_id + i].off16 = 2; // numbered icons
@@ -391,31 +408,158 @@ void create_menu_entry_rbeep_disable_screen(void)
     cfg_save();
 }
 
-void create_menu_entry_bootscr_enable_screen(void)
+void create_menu_entry_demo_enable_screen(void)
 {
-    mn_create_single_timed_ack(wt_bootscr, wt_bootscr_enable);
+    mn_create_single_timed_ack(wt_demoscr, wt_enable);
 
-    global_addl_config.bootscr = 0;
+    global_addl_config.boot_demo = 0;
 
     cfg_save();
 }
 
-void create_menu_entry_bootscr_quick_screen(void)
+void create_menu_entry_demo_disable_screen(void)
 {
-    mn_create_single_timed_ack(wt_bootscr, wt_bootscr_quick);
+    mn_create_single_timed_ack(wt_demoscr, wt_disable);
 
-    global_addl_config.bootscr = 1;
+    global_addl_config.boot_demo = 1;
 
     cfg_save();
 }
 
-void create_menu_entry_bootscr_disable_screen(void)
+void create_menu_entry_demo_screen(void)
 {
-    mn_create_single_timed_ack(wt_bootscr, wt_bootscr_disable);
+    mn_submenu_init(wt_demoscr);
 
-    global_addl_config.bootscr = 2;
+    md380_menu_entry_selected = global_addl_config.boot_demo;
+
+    mn_submenu_add(wt_demoscr_enable, create_menu_entry_demo_enable_screen);
+    mn_submenu_add(wt_demoscr_disable, create_menu_entry_demo_disable_screen);
+
+    mn_submenu_finalize();
+}
+
+void mn_cp_override_off(void)
+{
+    mn_create_single_timed_ack(wt_cp_override, wt_splash_manual);
+
+    //global_addl_config.boot_splash = 0;
+
+    global_addl_config.cp_override &= ~CPO_BL1 ;
+    global_addl_config.cp_override &= ~CPO_BL2 ;
+    
+    cfg_save();
+}
+
+uint32_t get_effective_dmrid()
+{
+    return global_addl_config.dmrid ;
+}
+
+void mn_cp_override_call_dmrid(void)
+{
+    mn_create_single_timed_ack(wt_cp_override, wt_splash_callid);
+
+    //global_addl_config.boot_splash = 1;
+    
+    global_addl_config.cp_override |= CPO_BL1 ;
+    global_addl_config.cp_override |= CPO_BL2 ;
+    
+    user_t usr ;
+    uint32_t dmrid = get_effective_dmrid();
+    int r = usr_find_by_dmrid(&usr,dmrid);
+    
+    if( r ) {
+        snprintf(global_addl_config.bootline1, 10, "%s", usr.callsign);
+    } else {
+        snprintf(global_addl_config.bootline1, 10, "%s", "unknown");
+    }
+
+    snprintf( global_addl_config.bootline2, 10, "%d", (int)dmrid );
 
     cfg_save();
+}
+
+void mn_cp_override_call_name(void)
+{
+    mn_create_single_timed_ack(wt_cp_override, wt_splash_callname);
+
+    //global_addl_config.boot_splash = 2;
+
+    global_addl_config.cp_override |= CPO_BL1 ;
+    global_addl_config.cp_override |= CPO_BL2 ;
+
+    user_t usr ;
+    uint32_t dmrid = get_effective_dmrid();
+    int r = usr_find_by_dmrid(&usr,dmrid);
+    
+    if( r ) {
+        snprintf(global_addl_config.bootline1, 10, "%s", usr.callsign);
+    } else {
+        snprintf(global_addl_config.bootline1, 10, "%s", "unknown");
+    }
+
+    if( r ) {
+        snprintf(global_addl_config.bootline2, 10, "%s", usr.firstname);
+    } else {
+        snprintf(global_addl_config.bootline2, 10, "%s", "unknown");
+    }
+    
+    cfg_save();
+}
+
+void mn_cp_override_dmrid_on(void)
+{
+    mn_create_single_timed_ack(wt_cp_override_dmrid, wt_enable);
+
+    global_addl_config.cp_override |= CPO_DMR ;
+
+    // set to override dmrid.
+    md380_radio_config.dmrid = global_addl_config.dmrid ;
+
+    cfg_save();
+}
+
+void mn_cp_override_dmrid_off(void)
+{
+    mn_create_single_timed_ack(wt_cp_override_dmrid, wt_disable);
+
+    global_addl_config.cp_override &= ~CPO_DMR ;
+
+    // restore codeplug dmrid.
+    md380_spiflash_read(&md380_radio_config.dmrid, FLASH_OFFSET_DMRID, 4);
+    
+    cfg_save();
+}
+
+void mn_cp_override_dmrid(void)
+{
+    mn_submenu_init(wt_cp_override_dmrid);
+    mn_submenu_add(wt_demoscr_enable, mn_cp_override_dmrid_on);
+    mn_submenu_add(wt_demoscr_disable, mn_cp_override_dmrid_off);
+    mn_submenu_finalize();
+}
+
+void mn_cp_override(void)
+{
+    mn_submenu_init(wt_cp_override);
+    
+    mn_submenu_add(wt_splash_manual, mn_cp_override_off);
+    mn_submenu_add(wt_splash_callid, mn_cp_override_call_dmrid);
+    mn_submenu_add(wt_splash_callname, mn_cp_override_call_name);
+
+    mn_submenu_add(wt_cp_override_dmrid, mn_cp_override_dmrid);
+    
+    mn_submenu_finalize();
+}
+
+void create_menu_entry_bootopts_screen(void)
+{
+    mn_submenu_init(wt_bootopts);
+
+    mn_submenu_add_98(wt_demoscr, create_menu_entry_demo_screen);
+//    mn_submenu_add_98(wt_splash, create_menu_entry_splash_screen);
+
+    mn_submenu_finalize2();
 }
 
 void create_menu_entry_datef_original_screen(void)
@@ -479,6 +623,8 @@ void create_menu_entry_userscsv_enable_screen(void)
     global_addl_config.userscsv = 1;
 
     cfg_save();
+
+    cfg_set_radio_name();
 }
 
 void create_menu_entry_userscsv_disable_screen(void)
@@ -570,19 +716,6 @@ void create_menu_entry_rbeep_screen(void)
     mn_submenu_finalize();
 }
 
-void create_menu_entry_bootscr_screen(void)
-{
-    mn_submenu_init(wt_bootscr);
-
-    md380_menu_entry_selected = global_addl_config.bootscr;
-
-    mn_submenu_add(wt_bootscr_enable, create_menu_entry_bootscr_enable_screen);
-    mn_submenu_add(wt_bootscr_quick, create_menu_entry_bootscr_quick_screen);
-    mn_submenu_add(wt_bootscr_disable, create_menu_entry_bootscr_disable_screen);
-
-    mn_submenu_finalize();
-}
-
 void create_menu_entry_datef_screen(void)
 {
     mn_submenu_init(wt_datef);
@@ -613,16 +746,6 @@ void create_menu_entry_userscsv_screen(void)
     mn_submenu_add(wt_disable, create_menu_entry_userscsv_disable_screen);
 
     mn_submenu_finalize();
-    
-//  } else {
-//    menu_mem = (md380_menu_memory + ((md380_menu_depth) * sizeof(struct MENU))) + sizeof(struct MENU);
-//    menu_mem->menu_title = wt_userscsv;
-//    menu_mem->unknownp = 0x14 * md380_menu_id + md380_menu_mem_base;
-//    menu_mem->numberof_menu_entries=1;
-//    menu_mem->unknown_00 = 0;
-//    menu_mem->unknown_01 = 0;
-//    create_menu_entry_hook( md380_menu_id, wt_no_w25q128, md380_menu_entry_back+1, md380_menu_entry_back+1, 6, 2 , 1);
-//  }
 }
 
 void create_menu_entry_debug_screen(void)
@@ -640,34 +763,6 @@ void create_menu_entry_debug_screen(void)
 
     mn_submenu_finalize();
 }
-
-//void create_menu_entry_netmon1_screen(void)
-//{
-//    mn_create_single_timed_ack(wt_netmon,wt_netmon_1);
-//    
-//    global_addl_config.console = 1;
-//
-//    cfg_save();
-//}
-//
-//
-//void create_menu_entry_netmon2_screen(void)
-//{
-//    mn_create_single_timed_ack(wt_netmon,wt_netmon_2);
-//    
-//    global_addl_config.console = 2;
-//
-//    cfg_save();
-//}
-//
-//void create_menu_entry_netmon3_screen(void)
-//{
-//    mn_create_single_timed_ack(wt_netmon,wt_netmon_3);
-//    
-//    global_addl_config.console = 3;
-//
-//    cfg_save();
-//}
 
 void create_menu_entry_netmon_disable_screen(void)
 {
@@ -687,7 +782,7 @@ void create_menu_entry_netmon_enable_screen(void)
     cfg_save();
 }
 
-#if defined(FW_D13_020)    
+#if defined(FW_D13_020) || defined(FW_S13_020)
 int enabled = 1;
 #else
 int enabled = 0;
@@ -725,6 +820,14 @@ void create_menu_entry_experimental_screen(void)
     mn_submenu_finalize();
 }
 
+
+//-------------------------------------------------------------
+// Backlight configuration: Timer adjustable 5, 30, 60 seconds,
+//    besides those in the original firmware.
+//    Please don't remove the 5 second option,
+//    it's the preferred one in combination with DIMMING .
+//-------------------------------------------------------------
+
 void mn_backlight_set(int sec5, const wchar_t *label)
 {
     mn_create_single_timed_ack(wt_backlight,label);
@@ -732,6 +835,16 @@ void mn_backlight_set(int sec5, const wchar_t *label)
     md380_radio_config.backlight_time = sec5 ; // in 5 sec incr.
 
     rc_write_radio_config_to_flash();    
+}
+
+void mn_backlight_unchanged()
+{
+}
+
+
+void mn_backlight_5sec()
+{
+    mn_backlight_set(1,wt_bl5);     
 }
 
 void mn_backlight_30sec()
@@ -744,12 +857,255 @@ void mn_backlight_60sec()
     mn_backlight_set(12,wt_bl60);     
 }
 
-void mn_backlight(void)
+void mn_backlight(void)  // menu for the backlight-TIME (longer than Tytera's, but sets the same parameter)
 {
     mn_submenu_init(wt_backlight);
+
+    if ( md380_radio_config.backlight_time == 12 ) {
+        md380_menu_entry_selected = 2;
+    } else if ( md380_radio_config.backlight_time == 6 ) {
+        md380_menu_entry_selected = 1;
+    } else {
+        md380_menu_entry_selected = 0;
+    }
     
+
+    switch( md380_radio_config.backlight_time ) // inspired by fix stargo0's fix #674 
+     { // (fixes the selection of the current backlight-time in the menu)
+       case 1 /* times 5sec */ : md380_menu_entry_selected = 1; break;
+       case 6 /* times 5sec */ : md380_menu_entry_selected = 2; break;
+       case 12/* times 5sec */ : md380_menu_entry_selected = 3; break;
+       default/* unchanged  */ : md380_menu_entry_selected = 0; break;
+     }
+    mn_submenu_add(wt_blunchanged, mn_backlight_unchanged);
+    mn_submenu_add(wt_bl5,  mn_backlight_5sec );
+
     mn_submenu_add(wt_bl30, mn_backlight_30sec);
     mn_submenu_add(wt_bl60, mn_backlight_60sec);
+
+    mn_submenu_finalize();
+}
+
+
+#if( CONFIG_DIMMED_LIGHT ) // Setup for pulse-width modulated backlight ? (DL4YHF 2017-01-08)
+typedef void(*tMenuFunctionPtr)(void);
+static uint8_t bIntensityMenuIndex; // 0 = modifying "backlight intensity low" (used during idle time),
+                                    // 1 = modifying "backlight intensity high" (used when 'radio active').
+
+void mn_backlight_intens( int intensity ) // common 'menu handler' for all <NUM_BACKLIGHT_INTENSITIES> intensity steps
+{ // Caller: create_menu_entry_addl_functions_screen() -> mn_backlight_hi() + mn_backlight_lo()
+  //          -> mn_submenu_add() -> ?.. 
+  //              -> mn_backlight_intens_0/1/../9() -> mn_backlight_intens( intensity=0..9 )
+  // 
+  switch( bIntensityMenuIndex ) // what's being edited, "low" (idle) or "high" (active) backlight intensity ?
+   { case 0 : // selected a new LOW backlight intensity ...
+     default:
+        mn_create_single_timed_ack( wt_bl_intensity_lo, wt_bl_intensity[intensity]/*label*/ );
+        global_addl_config.backlight_intensities &= 0xF0;  // strip old nibble (lower 4 bits for "lower" intensity)
+        global_addl_config.backlight_intensities |= (uint8_t)intensity; 
+        break;
+     case 1 : // selected a new HIGH backlight intensity :
+        mn_create_single_timed_ack( wt_bl_intensity_hi, wt_bl_intensity[intensity]/*label*/ );
+        global_addl_config.backlight_intensities &= 0x0F;  // strip old nibble (upper 4 bits for "high" intensity)
+        global_addl_config.backlight_intensities |= ((uint8_t)intensity << 4);
+        break;
+   }
+  // The upper 4 bits must never be ZERO, to avoid 'complete darkness' of the display when ACTIVE .
+  // Because in some radios, the PWM caused audible hum, use max brightness per default:
+  if( !(global_addl_config.backlight_intensities & 0xF0) )
+   {    global_addl_config.backlight_intensities |= 0xF0;
+   }
+  cfg_save();
+  
+} // end mn_backlight_intens()
+
+// 'menu callback' for backlight intensity steps 0 .. 9 
+//  (kludge required because the callback doesn't pass the item-index)
+void mn_backlight_intens_0(void) {  mn_backlight_intens(0); }
+void mn_backlight_intens_1(void) {  mn_backlight_intens(1); }
+void mn_backlight_intens_2(void) {  mn_backlight_intens(2); }
+void mn_backlight_intens_3(void) {  mn_backlight_intens(3); }
+void mn_backlight_intens_4(void) {  mn_backlight_intens(4); }
+void mn_backlight_intens_5(void) {  mn_backlight_intens(5); }
+void mn_backlight_intens_6(void) {  mn_backlight_intens(6); }
+void mn_backlight_intens_7(void) {  mn_backlight_intens(7); }
+void mn_backlight_intens_8(void) {  mn_backlight_intens(8); }
+void mn_backlight_intens_9(void) {  mn_backlight_intens(9); }
+
+tMenuFunctionPtr nm_backlight_intensity_funcs[ NUM_BACKLIGHT_INTENSITIES ] =
+ { mn_backlight_intens_0, mn_backlight_intens_1, mn_backlight_intens_2, mn_backlight_intens_3, mn_backlight_intens_4,
+   mn_backlight_intens_5, mn_backlight_intens_6, mn_backlight_intens_7, mn_backlight_intens_8, mn_backlight_intens_9 
+ };
+ 
+void mn_backlight_lo(void)  // configure LOW backlight intensity (used when "idle")
+{
+  int i;
+  bIntensityMenuIndex = 0;  // "now selecting the LOW backlight intensity" ...
+  i = (global_addl_config.backlight_intensities & 15) % NUM_BACKLIGHT_INTENSITIES;
+  if( i>= NUM_BACKLIGHT_INTENSITIES )
+   {  i = NUM_BACKLIGHT_INTENSITIES-1; // valid ITEM indices: 0..9 (with NUM_BACKLIGHT_INTENSITIES=10)
+   }
+  md380_menu_entry_selected = i;       // <- always a zero-based item index
+  mn_submenu_init(wt_bl_intensity_lo);
+  for(i=0; i<NUM_BACKLIGHT_INTENSITIES; ++i)
+   { mn_submenu_add(wt_bl_intensity[i], nm_backlight_intensity_funcs[i] );
+   }
+  mn_submenu_finalize();
+}
+
+void mn_backlight_hi(void)  // configure HIGH backlight intensity (used when "active")
+{
+  int i;
+  bIntensityMenuIndex = 1;  // "now selecting the HIGH backlight intensity" ...
+  // intensity value '0' (off) NOT ALLOWED for the 'HIGH' setting, thus SUBTRACT ONE below:
+  i = ( (global_addl_config.backlight_intensities>>4) & 15) - 1;
+  if( i>= (NUM_BACKLIGHT_INTENSITIES-1) )
+   {  i = NUM_BACKLIGHT_INTENSITIES-2; // valid ITEM indices: 0..8 (with NUM_BACKLIGHT_INTENSITIES=10)
+   }
+  if( i<0 )
+   {  i=0;
+   }
+  md380_menu_entry_selected = i;       // <- always a zero-based item index
+  mn_submenu_init(wt_bl_intensity_hi);
+  for(i=1/*!!*/; i<NUM_BACKLIGHT_INTENSITIES; ++i)
+   { mn_submenu_add(wt_bl_intensity[i], nm_backlight_intensity_funcs[i] );
+   }
+  mn_submenu_finalize();
+}
+#endif // CONFIG_DIMMED_LIGHT ?
+
+
+#if defined(FW_D13_020) || defined(FW_S13_020)
+void set_sidebutton_function(void)
+{
+    button_function = button_functions[currently_selected_menu_entry];
+
+    switch ( button_selected ) {
+        case 0:
+            top_side_button_pressed_function = button_function;
+            md380_spiflash_write(&button_function, 0x2102, 1);
+            mn_create_single_timed_ack(wt_button_top_press,wt_button_func_set);
+            break;
+        case 1:
+            bottom_side_button_pressed_function = button_function;
+            md380_spiflash_write(&button_function, 0x2104, 1);
+            mn_create_single_timed_ack(wt_button_bot_press,wt_button_func_set);
+            break;
+        case 2:
+            top_side_button_held_function = button_function;
+            md380_spiflash_write(&button_function, 0x2103, 1);
+            mn_create_single_timed_ack(wt_button_top_held,wt_button_func_set);
+            break;
+        case 3:
+            bottom_side_button_held_function = button_function;
+            md380_spiflash_write(&button_function, 0x2105, 1);
+            mn_create_single_timed_ack(wt_button_bot_held,wt_button_func_set);
+            break;
+    }
+}
+
+void select_sidebutton_function_screen(void)
+{
+    button_selected = currently_selected_menu_entry;
+
+    switch ( button_selected ) {
+        case 0:
+            md380_menu_entry_selected = index_of(top_side_button_pressed_function, button_functions,  sizeof(button_functions));
+            mn_submenu_init(wt_button_top_press);
+            break;
+        case 1:
+            md380_menu_entry_selected = index_of(bottom_side_button_pressed_function, button_functions, sizeof(button_functions));
+            mn_submenu_init(wt_button_bot_press);
+            break;
+        case 2:
+            md380_menu_entry_selected = index_of(top_side_button_held_function, button_functions, sizeof(button_functions));
+            mn_submenu_init(wt_button_top_held);
+            break;
+        case 3:
+            md380_menu_entry_selected = index_of(bottom_side_button_held_function, button_functions, sizeof(button_functions));
+            mn_submenu_init(wt_button_bot_held);
+            break;
+    }
+
+
+    mn_submenu_add(wt_button_unassigned, set_sidebutton_function);
+    mn_submenu_add(wt_button_alert_tone, set_sidebutton_function);
+    mn_submenu_add(wt_button_emerg_on, set_sidebutton_function);
+    mn_submenu_add(wt_button_emerg_off, set_sidebutton_function);
+    mn_submenu_add(wt_button_power, set_sidebutton_function);
+    mn_submenu_add(wt_button_monitor, set_sidebutton_function);
+    mn_submenu_add(wt_button_nuisance, set_sidebutton_function);
+    mn_submenu_add(wt_button_ot1, set_sidebutton_function);
+    mn_submenu_add(wt_button_ot2, set_sidebutton_function);
+    mn_submenu_add(wt_button_ot3, set_sidebutton_function);
+    mn_submenu_add(wt_button_ot4, set_sidebutton_function);
+    mn_submenu_add(wt_button_ot5, set_sidebutton_function);
+    mn_submenu_add(wt_button_ot6, set_sidebutton_function);
+    mn_submenu_add(wt_button_rep_talk, set_sidebutton_function);
+    mn_submenu_add(wt_button_scan, set_sidebutton_function);
+    mn_submenu_add(wt_button_squelch, set_sidebutton_function);
+    mn_submenu_add(wt_button_privacy, set_sidebutton_function);
+    mn_submenu_add(wt_button_vox, set_sidebutton_function);
+    mn_submenu_add(wt_button_zone, set_sidebutton_function);
+    mn_submenu_add(wt_button_zone_tog, set_sidebutton_function);
+    mn_submenu_add(wt_button_bat_ind, set_sidebutton_function);
+    mn_submenu_add(wt_button_man_dial, set_sidebutton_function);
+    mn_submenu_add(wt_button_lone_work, set_sidebutton_function);
+    mn_submenu_add(wt_button_1750_hz, set_sidebutton_function);
+    mn_submenu_add(wt_button_bklt_en, set_sidebutton_function);
+
+    mn_submenu_finalize();
+}
+#else
+#warning Side Buttons not supported on D02 firmware
+#endif
+
+void create_menu_entry_sidebutton_screen(void)
+{
+#if defined(FW_D13_020) || defined(FW_S13_020)
+
+    md380_menu_entry_selected = 0;
+    mn_submenu_init(wt_sidebutton_menu);
+
+    mn_submenu_add_98(wt_button_top_press, select_sidebutton_function_screen);
+    mn_submenu_add_98(wt_button_bot_press, select_sidebutton_function_screen);
+    mn_submenu_add_98(wt_button_top_held, select_sidebutton_function_screen);
+    mn_submenu_add_98(wt_button_bot_held, select_sidebutton_function_screen);
+
+    mn_submenu_finalize2();
+#endif
+}
+
+void create_menu_entry_backlight_screen(void)
+{
+#if defined(FW_D13_020) || defined(FW_S13_020)
+    md380_menu_entry_selected = 0;
+    mn_submenu_init(wt_backlight_menu);
+
+#  if( CONFIG_DIMMED_LIGHT )    // *optional* feature since 2017-01-08 - see config.h
+    mn_submenu_add_98(wt_bl_intensity_lo/*item text*/, mn_backlight_lo/*menu handler*/ ); // backlight intensity "low" (used when idle)
+    mn_submenu_add_98(wt_bl_intensity_hi/*item text*/, mn_backlight_hi/*menu handler*/ ); // backlight intensity "high" (used when active)
+#  endif   
+    mn_submenu_add_98(wt_backlight, mn_backlight); // backlight TIMER (longer than Tytera's 5/10/15 seconds)
+    mn_submenu_finalize2();
+#endif
+}
+
+
+void mn_config_reset2()
+{
+    mn_create_single_timed_ack(wt_backlight,wt_config_reset_doit);
+
+    memset( &global_addl_config, 0, sizeof(global_addl_config) );
+    
+    cfg_save();
+}
+
+void mn_config_reset(void)
+{
+    mn_submenu_init(wt_config_reset);
+    
+    mn_submenu_add(wt_config_reset_doit, mn_config_reset2);
 
     mn_submenu_finalize();
 }
@@ -771,7 +1127,7 @@ void create_menu_entry_edit_screen_store(void)
 
 void create_menu_entry_edit_screen(void)
 {
-    struct MENU *menu_mem;
+    menu_t *menu_mem;
     uint8_t i;
     uint8_t *p;
 
@@ -796,7 +1152,7 @@ void create_menu_entry_edit_screen(void)
       0x08012ab0      f4d3           blo 0x8012a9c
      */
 
-    // clear retrun buffer //  see 0x08012a98
+    // clear return buffer //  see 0x08012a98
     // TODO: is wchar_t (16 bits))
     for (i = 0; i < 0x11; i++) {
         p = (uint8_t *) mn_editbuffer_poi;
@@ -814,7 +1170,7 @@ void create_menu_entry_edit_screen(void)
 
     menu_mem = get_menu_stackpoi();
     menu_mem->menu_title = wt_edit;
-    menu_mem->unknownp = &md380_menu_mem_base[md380_menu_id];
+    menu_mem->entries = &md380_menu_mem_base[md380_menu_id];
     menu_mem->numberof_menu_entries = 1;
     menu_mem->unknown_00 = 0;
     menu_mem->unknown_01 = 0;
@@ -822,57 +1178,6 @@ void create_menu_entry_edit_screen(void)
 #ifdef CONFIG_MENU
     md380_create_menu_entry(md380_menu_id, wt_edit, MKTHUMB(create_menu_entry_edit_screen_store), MKTHUMB(md380_menu_numerical_input), 0x81, 0, 1);
 #endif
-}
-
-void set_radio_name()
-{
-    uint8_t found = 0;
-    uint8_t pos = 0;
-    uint8_t b_size = 25;
-    char callsign[10] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    char buf[b_size];
-    // Set the top line to the call sign found in the userdb
-    if ( find_dmr_user(buf, global_addl_config.dmrid, (void *) 0x100000, b_size) ) {
-        for (uint8_t i = 0; i < b_size; i++) {
-          if (buf[i] == 0) {
-              break;
-          }
-          if (buf[i] == ',') {
-              found++;
-          }
-          if (found > 0 && buf[i] != ',' && buf[i] != ' ') {
-              callsign[pos] = buf[i];
-              pos++;
-          }
-          if (found == 2 || pos >= 10) {
-              break;
-          }
-        }
-    }
-
-    if (pos == 0) {
-        strncpy(callsign, "UNKNOWNID", 10);
-    }
-
-    for (uint8_t ii = 0 ; ii < 20; ii++) {
-        toplinetext[ii] = 0x00;
-        if (ii%2 == 0) {
-            toplinetext[ii] = callsign[ii/2];
-        }
-    }
-
-    for (uint8_t ii = 0 ; ii < 32; ii++) {
-        if (ii%2 == 0 && ii < 20) {
-            md380_radio_config.radioname[ii] = callsign[ii/2];
-            global_addl_config.rname[ii] = callsign[ii/2];
-        } else {
-            md380_radio_config.radioname[ii] = 0x00;
-            global_addl_config.rname[ii] = 0x00;
-        }
-    }
-
-    cfg_save();
-    md380_spiflash_write(&md380_radio_config.radioname, FLASH_OFFSET_RNAME, 4);
 }
 
 void create_menu_entry_edit_dmr_id_screen_store(void)
@@ -900,43 +1205,29 @@ void create_menu_entry_edit_dmr_id_screen_store(void)
     printf("\n%d\n", new_dmr_id);
 #endif
     
+    // save in addl cfg.
     global_addl_config.dmrid = new_dmr_id ;
     cfg_save();
 
-    cfg_fix_dmrid();
-
+    // save in codeplug.
+    md380_radio_config.dmrid = new_dmr_id ;
+    md380_spiflash_write(&new_dmr_id, FLASH_OFFSET_DMRID, 4);
+    
     md380_menu_id = md380_menu_id - 1;
     md380_menu_depth = md380_menu_depth - 1;
-    
-    set_radio_name();
+
+    if (global_addl_config.userscsv == 1) {
+        cfg_set_radio_name();
+    }
 
 #ifdef CONFIG_MENU
     md380_create_menu_entry(md380_menu_id, md380_menu_edit_buf, MKTHUMB(md380_menu_entry_back), MKTHUMB(md380_menu_entry_back), 6, 1, 1);
 #endif
 }
 
-uint32_t uli2w(uint32_t num, wchar_t *bf)
-{
-    int n = 0;
-    unsigned int d = 1;
-    while (num / d >= 10)
-        d *= 10;
-    while (d != 0) {
-        int dgt = num / d;
-        num %= d;
-        d /= 10;
-        if( n || dgt > 0 || d == 0 ) {
-            *bf++ = dgt + '0';
-            ++n;
-        }
-    }
-    *bf = 0;
-    return (n); // number of char
-}
-
 void create_menu_entry_edit_dmr_id_screen(void)
 {
-    struct MENU *menu_mem;
+    menu_t *menu_mem;
     uint8_t i;
     uint8_t *p;
     uint32_t nchars;
@@ -970,7 +1261,7 @@ void create_menu_entry_edit_dmr_id_screen(void)
     md380_menu_0x2001d3f4 = 0;
     menu_mem = get_menu_stackpoi();
     menu_mem->menu_title = wt_edit_dmr_id;
-    menu_mem->unknownp = &md380_menu_mem_base[md380_menu_id];
+    menu_mem->entries = &md380_menu_mem_base[md380_menu_id];
     menu_mem->numberof_menu_entries = 1;
     menu_mem->unknown_00 = 0;
     menu_mem->unknown_01 = 0;
@@ -994,21 +1285,8 @@ void create_menu_entry_addl_functions_screen(void)
     PRINTRET();
     PRINT("create_menu_entry_addl_functions_screen\n");
 
-//#ifdef CONFIG_MENU
-//    md380_create_menu_entry(md380_menu_id, wt_rbeep, create_menu_entry_rbeep_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 1, wt_datef, create_menu_entry_datef_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 2, wt_userscsv, create_menu_entry_userscsv_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 3, wt_debug, create_menu_entry_debug_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 4, wt_promtg, create_menu_entry_promtg_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 5, wt_edit, create_menu_entry_edit_screen + 1, md380_menu_entry_back + 1, 0x8a, 0, 0); // disable this menu entry - no function jet
-//    md380_create_menu_entry(md380_menu_id + 6, wt_edit_dmr_id, create_menu_entry_edit_dmr_id_screen + 1, md380_menu_entry_back + 1, 0x8a, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 7, wt_micbargraph, create_menu_entry_micbargraph_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 8, wt_experimental, create_menu_entry_experimental_screen + 1, md380_menu_entry_back + 1, 0x8a, 0, 1);
-//    md380_create_menu_entry(md380_menu_id + 9, wt_netmon, create_menu_entry_netmon_screen + 1, md380_menu_entry_back + 1, 0x98, 0, 1);
-//#endif
-
     mn_submenu_add_98(wt_rbeep, create_menu_entry_rbeep_screen);
-    mn_submenu_add_98(wt_bootscr, create_menu_entry_bootscr_screen);
+    mn_submenu_add(wt_bootopts, create_menu_entry_bootopts_screen);
     mn_submenu_add_98(wt_datef, create_menu_entry_datef_screen);
     mn_submenu_add_98(wt_userscsv, create_menu_entry_userscsv_screen);
     mn_submenu_add_98(wt_debug, create_menu_entry_debug_screen);
@@ -1017,8 +1295,13 @@ void create_menu_entry_addl_functions_screen(void)
     mn_submenu_add_8a(wt_edit_dmr_id, create_menu_entry_edit_dmr_id_screen, 1);
     mn_submenu_add_98(wt_micbargraph, create_menu_entry_micbargraph_screen);
     mn_submenu_add_8a(wt_experimental, create_menu_entry_experimental_screen, 1);
-    mn_submenu_add(wt_backlight, mn_backlight);
+    mn_submenu_add(wt_sidebutton_menu, create_menu_entry_sidebutton_screen);
     
+    mn_submenu_add_98(wt_config_reset, mn_config_reset);
+
+    mn_submenu_add(wt_backlight_menu, create_menu_entry_backlight_screen);
+   
+    mn_submenu_add_98(wt_cp_override, mn_cp_override);    
     mn_submenu_add_98(wt_netmon, create_menu_entry_netmon_screen);
     
     mn_submenu_finalize2();
@@ -1026,7 +1309,7 @@ void create_menu_entry_addl_functions_screen(void)
 
 void create_menu_utilies_hook(void)
 {
-    struct MENU *menu_mem;
+    menu_t *menu_mem;
     int enabled;
 
     if( (md380_program_radio_unprohibited[4] & 0x4) == 0x4 ) {
@@ -1036,7 +1319,7 @@ void create_menu_utilies_hook(void)
     }
 
     menu_mem = get_menu_stackpoi();
-    menu_mem->unknownp = &md380_menu_mem_base[md380_menu_id];
+    menu_mem->entries = &md380_menu_mem_base[md380_menu_id];
     //  menu_mem->numberof_menu_entries++;
     menu_mem->numberof_menu_entries = 6;
 
@@ -1056,4 +1339,71 @@ void create_menu_utilies_hook(void)
 
 #endif
 
+}
+
+/* This hooks a function that is called a lot during menu processing.
+   Its exact purpose is unknown, but I'm working on that.
+ */
+void *main_menu_hook(void *menu){
+#if 0
+  void *menustruct;
+
+//  printf("main_menu() ");
+//  printhex(menu,32);
+//  printf("\n");
+
+
+  switch(* ((int*)menu)){
+  case 0x0b:
+    //printf("Exiting menu.\n");
+    break;
+  case 0x24:
+    //Third word of the parameter is a structure with
+    //more entries.
+    menustruct=(void*) *((int*)menu + 2);
+
+    printf("Menu struct: @0x%08x\n",
+       menustruct);
+    printf("Item %5d/%5d selected. %s\n",
+       (int) *((unsigned short*) (menustruct+0x42)),
+       (int) *((unsigned short*)menustruct),
+       "test");
+
+
+    //printhex(*((int*) menu+2),128);
+    //printf("\n");
+
+    /*
+
+Main menu:
+Menu struct: @0x20001398
+06000000 Total Entries
+02000000 Selected Page Index
+04000000 4a000000 00000000 91000000 8c0f0d08 00000000 3280ff00
+1414ff00 c0c0c000 c0c0c000 00000000 ffffff00 ffffff00 80808000 00000500
+                                                                   \--/
+                                                                Selected item
+00000000 4a001600 00436f6e 74616374 73006361 27001600 00536361 6e001600
+                    \--Contacts begins here.
+0a000c00 27001600 005a6f6e 65006c20 0a000c00 0b006573 49001600
+
+Contacts Menu, last Entry:
+Menu struct: @0x20001390
+e4020000 Total Entries
+e0020000 Selected Page Index
+         04000000 9c000000 00000000 91000000 8c0f0d08 00000000 3280ff00
+1414ff00 c0c0c000 c0c0c000 00000000 ffffff00 ffffff00 80808000 0000e302
+                                                                   \--/
+                                                                Selected item
+00000000 7d001600 00547269 2d537461 74652028 4c322900 41001600 004c6f63
+                    \--First contact entry starts here.
+616c2039 00436f6e 09000b00 3b001600 00444d52 204e4100 09000b00
+     */
+    break;
+  default:
+    //do nothing
+    break;
+  }
+#endif
+  return main_menu(menu);
 }

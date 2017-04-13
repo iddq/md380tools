@@ -2,7 +2,6 @@
   \brief .
 */
 
-#include <stdio.h>
 #include <string.h>
 
 #include "printf.h"
@@ -15,30 +14,19 @@
 #include "addl_config.h"
 #include "radio_config.h"
 #include "syslog.h"
+#include "usersdb.h"
 
 addl_config_t global_addl_config;
 
-void cfg_fix_dmrid()
-{
-    int dmrid = global_addl_config.dmrid ;
-    if( dmrid != 0 ) {
-        // store new dmr_id to ram and spi flash (codeplug)
-        md380_spiflash_write(&dmrid, FLASH_OFFSET_DMRID, 4);
-        md380_radio_config.dmrid = dmrid;
-    }
-}
-
-
-void cfg_fix_radioname()
-{
-    char *rname = global_addl_config.rname;
-    if( rname[0] != 0x00 ) {
-        md380_spiflash_write(&rname, FLASH_OFFSET_RNAME, 32);
-        for (uint8_t ii = 0; ii < 32; ii++) {
-            md380_radio_config.radioname[ii] = rname[ii];
-        }
-    }
-}
+//void cfg_fix_radioname()
+//{
+//    if( global_addl_config.rname[0] != 0x00 ) {
+//        md380_spiflash_write(&global_addl_config.rname[0], FLASH_OFFSET_RNAME, 32);
+//        for (uint8_t ii = 0; ii < 32; ii++) {
+//            md380_radio_config.radioname[ii] = global_addl_config.rname[ii];
+//        }
+//    }
+//}
 
 void cfg_read_struct( addl_config_t *cfg )
 {
@@ -92,25 +80,28 @@ void cfg_load()
     R(global_addl_config.debug,1);
     R(global_addl_config.rbeep,1);
     R(global_addl_config.promtg,1);
-    R(global_addl_config.bootscr,2);
+    R(global_addl_config.boot_demo,1);
+//    R(global_addl_config.boot_splash,0); // unused
     R(global_addl_config.netmon,3);
     R(global_addl_config.datef,5);
 
     // restore dmrid
-    cfg_fix_dmrid();
-    
-    // restore radio name
-    cfg_fix_radioname();
-            
+    if( ( global_addl_config.cp_override & CPO_DMR ) == CPO_DMR ) {
+        md380_radio_config.dmrid = global_addl_config.dmrid ;
+    }
+
+//    // restore radio name
+//    if (global_addl_config.userscsv == 1) {
+//        cfg_fix_radioname();
+//    }
+
     // global_addl_config.experimental is intentionally not permanent
     global_addl_config.experimental = 0;
-    
-    global_addl_config.boot_custom_str = 0 ;
 
-#if defined(FW_D13_020)    
+#if defined(FW_D13_020) || defined(FW_S13_020)
 #else
     global_addl_config.netmon = 0 ;
-#endif    
+#endif
 }
 
 void cfg_save()
@@ -121,7 +112,24 @@ void cfg_save()
     global_addl_config.crc = calc_crc(&global_addl_config,sizeof(addl_config_t));
     
     cfg_write_struct( &global_addl_config );
-}   
+}
+
+void cfg_set_radio_name()
+{
+//    char callsign[10] = {0x00};
+//
+//    if (get_dmr_user_field(2, callsign, global_addl_config.dmrid, 10) == 0) {
+//        strncpy(callsign, "UNKNOWNID", 10);
+//    }
+//    
+//    // TODO: fix type in addl_config, or convert during boot.
+////    wide_sprintf((wchar_t *)&global_addl_config.rname[0], "%s", callsign);
+//    snprintfw(global_addl_config.rname, 10, "%s", callsign);
+//    global_addl_config.rname[9] = 0x00;
+//
+//    cfg_save();
+//    cfg_fix_radioname();
+}
 
 void init_global_addl_config_hook(void)
 {
@@ -133,4 +141,3 @@ void init_global_addl_config_hook(void)
     md380_create_main_meny_entry();
 //#endif    
 }
-

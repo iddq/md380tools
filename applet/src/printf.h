@@ -119,9 +119,11 @@ void tfp_format(void* putp,void (*putf) (void*,char),const char *fmt, va_list va
 #define printf tfp_printf 
 #define sprintf tfp_sprintf 
 
-void wide_sprintf(wchar_t* ws, const char* fmt, ...);
+int snprintfw(wchar_t* buf, int sz, const char* fmt, ...);
+int snprintf(char* buf, int sz, const char* fmt, ...);
 
-//void wide_snprintf(wchar_t* ws, const char* fmt, ...);
+void va_snprintf(char *buf, int sz, const char* fmt, va_list va );
+void va_snprintfw(wchar_t *buf, int sz, const char* fmt, va_list va );
 
 #endif
 

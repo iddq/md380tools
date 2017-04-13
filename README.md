@@ -2,6 +2,13 @@
 
 by Travis Goodspeed, KK4VCZ
 
+#More documentation#
+* [Make targets](docs/make.md)
+* [md380-tool/md380-dfu](docs/md380tool.md)
+* [Jenkins](docs/JenkinsBuilder.md)
+* [CI](docs/ContinuousIntegration.md)
+
+
 # Support #
 
 To support users by using the md380tools or the resulting patched firmware 
@@ -9,6 +16,8 @@ a Google Group is public opened and reachable via
 https://groups.google.com/forum/#!forum/md380tools. No extra registration 
 should be necessary. You could also feed it via e-mail at 
 md380tools@googlegroups.com. So feel free to put in your questions into it!
+
+A few of us are also on the #md380 IRC channel on Freenode.
 
 # Introduction #
 
@@ -32,11 +41,44 @@ Development Tools:
 [![Build Status](https://travis-ci.org/travisgoodspeed/md380tools.svg?branch=master)](https://travis-ci.org/travisgoodspeed/md380tools)
 
 
+##Supported Hardware##
+
+The patched firmware is known to work on the following devices:
+
+* The "D"-Version (NoGPS) for radios **without GPS**
+  * Tytera/TYT MD380
+  * Tytera/TYT MD390
+  * Retevis RT3
+
+* The "S"-Version (GPS) for radios **with GPS**
+  * Tytera/TYT MD380
+  * Tytera/TYT MD390
+  * Retevis RT8
+
+Both types of vocoder (old and new vocoder radios) are supported.
+
+The DMR MARC user's database required a 16 MByte SPI Flash memory chip.
+In some VHF Radios is only an 1 MByte SPI Flash installed.
+
+##Known models##
+
+| Name | vocoder | GPS | exp FW | original FW |
+|---------|-----|---|---------|---------|
+| MD-380  | old | N | D02,D13 | D02,D03 |
+| MD-380  | new | N | D02,D13 | D02,D13 |
+| MD-380G | new | Y | D02,S13 | S13     |
+| MD-390  | new | N | D02,D13 | D13     |
+| MD-390G | new | Y | D02,S13 | S13     |
+
+  * RT3 = MD-380 (old)
+  * RT8 = MD-390G
+
 ###The md380tools have D13.020 as basic now.###
 
+<strike>
 to build the "old" d02.32 version
 
-	make flash_d02.032
+	make flash_D02
 
 These tools are all wrapped into `Makefile`, which will download the
 official firmware, patch and flash it.  Run `make flash` after booting
@@ -44,6 +86,7 @@ into the recovery bootloader by holding PTT and the button just above
 it during power-on.  Once device has been powered on, run `make flashdb`
 to write the DMR MARC user's database to SPI Flash memory. This works only
 with Radios that have 16 MByte SPI Flash memory chip installed.
+</strike>
 
 ##License:##
 
@@ -59,14 +102,6 @@ folks over some beer.
 Tytera's firmware is of unknown license and is not included in this
 repository.  We use a heap-less printf library under the BSD license.
 
-##Supported Hardware##
-
-The patched firmware is known to work on the following devices:
-
-* Tytera/TYT MD380 (old vocoder)
-* Tytera/TYT MD380 (new vocoder)
-* Tytera/TYT MD390 (new vocoder, no gps)
-* Retevis RT3
 
 ##Specifications:##
 
@@ -103,6 +138,7 @@ is under development for Android.
 * [SUSE](docs/suse.md)
 * [Raspberry Pi](docs/raspi.md)
 * [Windows](docs/windows.md)
+* [MacOS](docs/macos.md)
 
 ###Additional steps for linux based installations###
 
@@ -120,19 +156,36 @@ Turn on radio in DFU mode to begin firmware update with USB cable:
 * connect cable to MD380.
 * power-on MD380 by turning volume knob, while holding PTT button and button above PTT.
 
+For non-GPS-models do:
 ```
 git pull
-make doflash
+make flash
 ```
-###Flash updated users.csv database for linux based installations###
+For GPS-models do:
+```
+git pull
+make flash_S13
+```
+
+###Flash updated users database for linux based installations###
 
 Turn radio normally on to begin database loading with USB cable
 
+For European users:
 ```
-git pull
-make clean flashdb
+make updatedb_eur flashdb
 ```
-(The users.csv file located in the db directory must be refreshed this way otherwise it will continue using any already-existing users.csv file when running "make flashdb" from the main md380tools directory.)
+Note: for European users it is probably illegal to use the other method for updating, due to privacy laws.
+(this is not legal advice, please consult your lawyer to be sure).
+
+For the rest of the world:
+```
+make updatedb flashdb
+```
+
+(The users.csv file located in the db directory must be refreshed this way, 
+with "make updatedb", otherwise it will continue using any already-existing 
+users.csv file when running "make flashdb" )
 
 ##Convenient Usage:##
 
@@ -141,73 +194,10 @@ firmware.  You can check your version in Menu/Utilities/Radio
 Info/Version.  If it's a recent date you're good; if it's a number,
 you need to upgrade.
 
-To actively watch incoming calls, printing a call log with name and
-callsign:
-
-    md380-tool calllog
 
 To dump the recent dmesg log:
 
     md380-tool dmesg
-
-##Advanced Usage:##
-
-To download a raw (headerless) codeplug into the MD380.
-
-    m380-dfu write <filename.img>
-
-To upload a raw codeplug from the MD380.
-
-    md380-dfu read <filename.img>
-
-To dump the bootloader from the MD380.  (Only in radio mode, only on Mac.)
-
-    md380-dfu readboot <filename.bin>
-
-To exit programming mode, returning to radio mode.
-
-    md380-dfu detach
-
-To extract the raw app binary from an ecrypted Tytera firmware image:
-
-    md380-fw --unwrap MD-380-D2.32\(AD\).bin app.bin
-
-To wrap a raw app binary into a flashable Tytera firmware image:
-
-    md380-fw --wrap app-patched.bin MD-380-D2.32-patched.bin
-
-To export all sprites and glyphs from a raw firmware image:
-
-    md380-gfx --dir=imgout --firmware=patched.bin extract
-
-To re-import a single modified PPM sprite (must restore text header
-of the originally exported .ppm file; gimp et al. discard it):
-
-    md380-gfx --firmware=patched.bin --gfx=0x80f9ca8-poc.ppm write
-
-To flash the Ham-DMR UserDB to SPI Flash. **Works only on radios 
-with 16MByte SPI-Flash.**
-    
-    generate the upload file
-    
-       wc -c < db/users.csv > data ; cat db/users.csv >> data
-    
-    program to flash with: (very experimental)
-    
-       md380-tool spiflashwrite data 0x100000
-
-
-    or (all steps included): (very experimental)
-
-       make flashdb  
-
-After successfully flashing, the radio will be restarted.
-
-##Flashing on Linux Notes##
-
-To check the type / size of SPI-Flash
-
-    md380-tool spiflashid    
 
 ##Firmware Compilation##
 
@@ -258,12 +248,12 @@ foo.img`.
 
 ##More Info##
 
-An article by Travis Goodspeed on jailbreaking the MD380 was released
-as PoC||GTFO 10:8.  (`pocorgtfo10.pdf` page 76.)
+Some articles:
+* Jailbreaking the MD380, PoC||GTFO 10:8 ([pocorgtfo10.pdf](https://archive.org/details/pocorgtfo10) page 76.) by Travis Goodspeed
+* Running AMBE Firmware in Linux, PcC||GTFO 13:5 ([pocorgtfo13.pdf](https://archive.org/details/pocorgtfo13) page 38.) by Travis Goodspeed  
 
 Pat Hickey has some notes and tools up in his own repository,
 https://github.com/pchickey/md380-re
-
 
 
 ## Customization ##

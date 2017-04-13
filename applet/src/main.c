@@ -7,8 +7,9 @@
 #include "stm32f4_discovery.h"
 #include "stm32f4xx_conf.h" // again, added because ST didn't put it here ?
 
-#include <stdio.h>
 #include <string.h>
+
+#include "config.h"  // need to know CONFIG_DIMMED_LIGHT (defined in config.h since 2017-01-03)
 
 #include "md380.h"
 #include "printf.h"
@@ -20,7 +21,14 @@
 #include "radio_config.h"
 #include "gfx.h"
 #include "display.h"
+#include "usersdb.h"
+#include "util.h"
+#include "spiflash.h"
 
+#include "irq_handlers.h" // Initially written by DL4YHF as a 'playground' with various interrupt handlers .
+                          // Details in applet/src/irq_handlers.c . 
+
+						  
 GPIO_InitTypeDef  GPIO_InitStructure;
 
 void Delay(__IO uint32_t nCount);
@@ -90,92 +98,63 @@ const char *str2wide(char *widestring,
 }
 
 
-//const 
-char hexes[]="0123456789abcdef"; //Needs to be const for problems.
-
-/* This writes a 32-bit hexadecimal value into a human-readable
-   string.  We do it manually to avoid heap operations. */
-void strhex(char *string, long value){
-  char b;
-  for(int i=0;i<4;i++){
-    b=value>>(24-i*8);
-    string[2*i]=hexes[(b>>4)&0xF];
-    string[2*i+1]=hexes[b&0xF];
-  }
-}
-
-/* This writes a 32-bit hexadecimal value into a human-readable
-   string.  We do it manually to avoid heap operations. */
-void wstrhex(wchar_t *string, long value){
-  char b;
-  for(int i=0;i<4;i++){
-    b=value>>(24-i*8);
-    string[2*i]=hexes[(b>>4)&0xF];
-    string[2*i+1]=hexes[b&0xF];
-  }
-}
 
 //Make the welcome image scroll across the screen.
-void demo_show_animation(void) {
-  for(int i=0;i<0x60;i+=3){
-    gfx_drawbmp(welcomebmp,0,i);
-    sleep(30);
-  }
-}
 
-void demo_clear(void) {
-  // Clear screen
-  uint32_t oldfg = gfx_get_fg_color();
-  gfx_set_fg_color(0xffffff);
-  gfx_blockfill(0, 0, 160, 128);
-  gfx_set_fg_color(oldfg);
-}
-
-void dyn_bootscreen(void)
+void demo_show_animation(void)
 {
-    if( global_addl_config.boot_custom_str == 0 ) {
-        //Restore the bottom line of text before we return.
-        md380_spiflash_read(botlinetext, 0x2054, 20);
-        return ;
-    }
-    
-    // Set the bottom line to the config's dmr id
-    char dmridstr[10];
-    sprintf(dmridstr, "%u\0", (uint32_t) global_addl_config.dmrid);
-    
-    // We need to pad for wchar, someone will probably rip out their eyeballs reading this
-    //mbstowcs(&botlinetext, dmridstr, 10);
-    for (uint8_t ii = 0; ii < 20; ii++) {
-        botlinetext[ii] = 0x00;
-        if( ii % 2 == 0 ) {
-            botlinetext[ii] = dmridstr[ii / 2];
-        }
-    }
-
-    for (uint8_t ii = 0; ii < 20; ii++) {
-        toplinetext[ii] = global_addl_config.rname[ii];
+    for (int i = 0; i < 0x60; i += 3) {
+        gfx_drawbmp(welcomebmp, 0, i);
+        sleep(30);
     }
 }
 
-void demo(void) {
-#ifdef CONFIG_GRAPHICS
-  switch (global_addl_config.bootscr) {
-    case 2:
-      break;
-    case 1:
-      display_credits();
-      sleep(500);
-      demo_clear();
-      break;
-    default:
-      display_credits();
-      sleep(1000);
-      demo_show_animation();
-  }
-#endif //CONFIG_GRAPHICS
+void demo_clear(void)
+{
+    // Clear screen
+    uint32_t oldfg = gfx_get_fg_color();
+    gfx_set_fg_color(0xffffff);
+    gfx_blockfill(0, 0, 160, 128);
+    gfx_set_fg_color(oldfg);
+}
 
-  // Setup dynamic bootscreen
-  dyn_bootscreen();
+void demo(void)
+{
+    display_credits();
+    sleep(1000);
+    demo_show_animation();
+    demo_clear();
+}
+
+void boot_splash_set_topline(void)
+{
+    if( (global_addl_config.cp_override & CPO_BL1) == CPO_BL1 ) {
+        snprintfw(toplinetext, 10, "%s", global_addl_config.bootline1);
+    } 
+}
+
+void boot_splash_set_bottomline(void)
+{
+    if( (global_addl_config.cp_override & CPO_BL2) == CPO_BL2 ) {
+        snprintfw(botlinetext, 10, "%s", global_addl_config.bootline2);
+    } 
+}
+
+void splash_hook_handler(void)
+{
+  
+    if( global_addl_config.boot_demo == 0 ) {
+        demo();
+    }
+    
+//    test_mbox();
+
+    md380_spiflash_read(botlinetext, FLASH_OFFSET_BOOT_BOTTONLINE, 20);
+    // possibly botlinetext does not need to be zero-terminated, but we dont know yet
+    botlinetext[9] = 0 ; // safety
+    
+    boot_splash_set_topline();
+    boot_splash_set_bottomline();
 }
 
 
@@ -190,6 +169,7 @@ void demo(void) {
    initialized in the stock firmware.
 */
 int main(void) {
+
   dmesg_init();
   
   /*

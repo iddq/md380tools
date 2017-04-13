@@ -2,15 +2,70 @@
   \brief Graphics function wrappers.
 */
 
-//! Draws wide text at an address by calling back to the MD380 function.
-void drawtext(wchar_t *text,
-	      int x, int y);
-//! Draws ASCII on the screen.
-void drawascii(char *ascii,
-	       int x, int y);
+// 160 pixels wide, 128 pixels high
+#define MAX_X 159
+#define MAX_Y 127    
+    
 
-void drawascii2(char *ascii,
-                int x, int y);
+#define GFX_FONT_SMALL_HEIGHT 12 
+#define GFX_FONT_NORML_HEIGHT 16
+
+// max string that spans from left to right one single line.
+#define MAX_SCR_STR_LEN 30 
+
+
+// md380 gfx
+/**
+ * Draw text, centered in area
+ * @param str 16-bit, little endian.
+ * @param sx area start x 
+ * @param sy area start y 
+ * @param ex area end x
+ * @param ey area end y
+ * @param maxlen chars
+ */
+void gfx_drawtext(wchar_t *str, uint16_t sx, uint16_t sy, uint16_t ex, uint16_t ey, uint16_t maxlen);
+
+void gfx_drawbmp(char *bmp, int x, int y);
+
+void gfx_set_bg_color(int color);
+void gfx_set_fg_color(int color);
+
+
+/**
+ * 
+ * @param x_from 0...159
+ * @param y_from 0...127
+ * @param x_to   0...159
+ * @param y_to   0...127
+ */
+void gfx_blockfill(int x_from, int y_from, int x_to, int y_to);
+
+
+// xlen: if curpos > xlen print ".." instead.
+// assume clear ylen = 18 pixels?
+void gfx_drawtext2(wchar_t *str, int x, int y, int xlen); // firmware
+
+void gfx_drawtext6(wchar_t *str, int x, int y, int ylen); // firmware
+
+void gfx_clear3( int xlen ); // firmware
+
+
+// if larger than maxstrlen end in ".."
+void gfx_drawtext4(const wchar_t *str, int x, int y, int xlen, int maxstrlen); // firmware
+
+//! Draws wide text at an address by calling back to the MD380 function.
+void drawtext(wchar_t *text, int x, int y);
+
+//! Draws ASCII on the screen.
+void drawascii(char *ascii, int x, int y);
+
+//// TODO: how does this differ from drawascii?
+//void drawascii2(char *ascii, int x, int y);
+
+void gfx_printf_pos(int x, int y, const char *fmt, ... );
+void gfx_printf_pos2(int x, int y, int ylen, const char*fmt, ... );
+void gfx_puts_pos(int x, int y, const char *str);
 
 void green_led(int on);
 void red_led(int on);
@@ -91,15 +146,20 @@ void gfx_drawchar( uint8_t c );
 void* gfx_select_font(void *p);
 
 // max strlen = 18, if larger end in ".."
-void gfx_chars_to_display_hook(wchar_t *str, int x, int y, int xlen);
+void gfx_drawtext2_hook(wchar_t *str, int x, int y, int xlen);
 
-// if larger than maxstrlen end in ".."
-void gfx_drawtext4(const wchar_t *str, int x, int y, int xlen, int maxstrlen);
 
-#if defined(FW_D13_020)
+#if defined(FW_D13_020) || defined(FW_S13_020)
 void gfx_drawtext7(const char *str, int x, int y); // firmware
 #else
 #define gfx_drawtext7(p1,p2,p3) /* nop */
+#warning please consider finding symbol.
+#endif    
+
+#if defined(FW_D13_020) 
+void gfx_drawtext10(wchar_t *str, int x1, int y1, int x2, int y2); // firmware
+#else
+#define gfx_drawtext10(p1,p2,p3,p4,p5) /* nop */
 #warning please consider finding symbol.
 #endif    
 
@@ -107,3 +167,4 @@ extern uint32_t gfx_font_small[];
 extern uint32_t gfx_font_norm[];
 
 uint32_t gfx_get_fg_color(void);
+

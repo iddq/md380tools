@@ -34,7 +34,7 @@ struct radio_config2 {
     // [0x11] long press time in 4 msec units
 };
 
-#if defined(FW_D13_020)
+#if defined(FW_D13_020) || defined(FW_S13_020)
 void rc_write_radio_config_to_flash();
 #else
 #warning please consider adding symbols.    
@@ -62,13 +62,6 @@ struct keyboard_data2 {
     uint8_t flags0 ;  // config from radio_config2 0xe,0xf
 };
 
-// lucky guess, written as documentation.
-// lives around md380_radio_fm_dmr = 0x2001deb8;  
-// from pc = 0x080134dc 
-// it would be nice if this correlates with chirp md380.py struct memory.
-struct channel_mode_unknown {
-    uint8_t fm_dmr_mode ; // if( fm_dmr_mode & 3 ) == 2 { is_dmr(); }
-};
 
 #ifdef __cplusplus
 }

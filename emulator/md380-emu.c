@@ -58,6 +58,7 @@ void loadfirmwareversion();
 
 //Prints the version info from the firmware.
 void version(){
+  /*
   //Cast the buffer and read its contents.
   short *buf=&md380_usbbuf;
   loadfirmwareversion();
@@ -65,6 +66,8 @@ void version(){
   while(*buf)
     printf("%c",*buf++);
   printf("\n");
+  */
+  printf("FIXME: Version info is broken for now.");
 }
 
 //Prints usage info.
@@ -138,7 +141,11 @@ int main(int argc, char **argv){
 		    outfilename);
     break;
   case 'e'://ENCODE
-    printf("TODO: AMBE Encoding doesn't yet work.\n");
+    fprintf(stderr,"Encoding 8kHz Raw Mono Signed %s to AMBE %s.\n",
+	    infilename?infilename:"stdin",
+	    infilename?outfilename:"stdout");
+    encode_wav_file(infilename,
+		    outfilename);
     break;
   case 'V'://Version
     version();

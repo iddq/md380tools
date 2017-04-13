@@ -15,7 +15,11 @@ extern "C" {
 extern int rst_voice_active ;    
 extern int rst_src ;
 extern int rst_dst ;
+extern int rst_grp ;
 extern int rst_mycall ;
+extern uint8_t rst_flco ;
+
+extern uint8_t rx_voice ;
     
 extern int rst_hdr_sap ;
 extern int rst_hdr_src ;

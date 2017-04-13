@@ -21,6 +21,7 @@
 #include "console.h"
 #include "netmon.h"
 #include "radiostate.h"
+#include "unclear.h"
 
 char eye_paltab[] = {
     0xd7, 0xd8, 0xd6, 0x00, 0x88, 0x8a, 0x85, 0x00, 0xe1, 0xe2, 0xe0, 0x00, 0xff, 0xff, 0xff, 0x00,
@@ -37,11 +38,24 @@ char eye_pix[] = {
 const gfx_pal eye_pal = {14, 0, eye_paltab};
 const gfx_bitmap bmp_eye = {12, 12, 6, 4, eye_pix, &eye_pal, 0};
 
+#ifdef FW_D13_020
+#define D_ICON_EYE_X 65
+#define D_ICON_EYE_Y 1
+#endif
+#ifdef FW_S13_020
+// on MD390 draw promiscous mode eye closed to S-Meter due to GPS-symbol an standard position
+#define D_ICON_EYE_X 20
+#define D_ICON_EYE_Y 1
+#endif
+
 void draw_eye_opt()
 {
+#if defined(FW_D13_020) || defined(FW_S13_020)
+    // draw promiscous mode eye symbol 
     if( global_addl_config.promtg == 1 ) {
-        gfx_drawbmp((char *) &bmp_eye, 65, 1);
+        gfx_drawbmp((char *) &bmp_eye, D_ICON_EYE_X, D_ICON_EYE_Y);
     }
+#endif
 }
 
 // Takes a positive(!) integer amplitude and computes 200*log10(amp),
@@ -94,14 +108,16 @@ void draw_micbargraph()
     int is_tx = 0 ;
     int is_rx = 0 ;
 
-    is_tx = md380_f_4225_operatingmode == SCR_MODE_RX_VOICE && max_level > 10 ;
-    is_rx = md380_f_4225_operatingmode == SCR_MODE_RX_TERMINATOR ;
+    is_tx = gui_opmode1 == SCR_MODE_RX_VOICE && max_level > 10 ;
+    is_rx = gui_opmode1 == SCR_MODE_RX_TERMINATOR ;
 
-#ifdef FW_D13_020
+#if defined(FW_D13_020) || defined(FW_S13_020)
     {
-        uint8_t *rs = (void*)0x2001e5f0 ;
-        is_tx = rs[1] & 1 ;
-        is_rx = rs[1] & 2 ;
+//        uint8_t *rs = (void*)0x2001e5f0 ;
+        uint8_t s = radio_status_1.m1 ;
+        
+        is_tx = s & 1 ;
+        is_rx = s & 2 ;
     }
 #endif    
 
@@ -165,84 +181,77 @@ void draw_micbargraph()
     }
 }
 
-#define RX_POPUP_Y_START 12
+#define RX_POPUP_Y_START 24
+#define RX_POPUP_X_START 10
 
 void draw_rx_screen(unsigned int bg_color)
 {
-#ifdef CONFIG_GRAPHICS
-
-#define BSIZE 100    
-    char buf[BSIZE];
-    int n, i;
     int dst;
     int src;
+    int grp ;
+    
+    int primask = OS_ENTER_CRITICAL(); // for form sake
+//    dst = g_dst;
+//    src = g_src;
+    
+    dst = rst_dst ;
+    src = rst_src ;
+    grp = rst_grp ;
+    
+    OS_EXIT_CRITICAL(primask);
 
     // clear screen
     gfx_set_fg_color(bg_color);
-//    gfx_blockfill(2, 16, 157, 130); // if we go any lower, we wrap around to the top
     gfx_blockfill(0, 16, MAX_X, MAX_Y); 
 
     gfx_set_bg_color(bg_color);
     gfx_set_fg_color(0x000000);
     gfx_select_font(gfx_font_small);
 
-    int primask = OS_ENTER_CRITICAL(); // for form sake
-    dst = g_dst;
-    src = g_src;
-    OS_EXIT_CRITICAL(primask);
+    user_t usr ;
     
-    if( find_dmr_user(buf, src, (void *) 0x100000, BSIZE) == 0 ) {
-        sprintf(buf, ",ID not found,in users.csv,see README.md,on Github"); // , is line seperator ;)
+    if( usr_find_by_dmrid(&usr,src) == 0 ) {
+        usr.callsign = "ID unknown" ;
+        usr.firstname = "" ;
+        usr.name = "No entry in" ;
+        usr.place = "your users.csv" ;
+        usr.state = "see README.md" ;
+        usr.country = "on Github" ;
     }
-    buf[BSIZE-1] = 0 ;
     
-    n = 0;
     int y_index = RX_POPUP_Y_START;
     
-    char *oldpoi = buf ;
-    int end = 0 ;
-
-    for (i = 0; i < BSIZE || n < 6; i++) {
-        if( buf[i] == 0 ) {
-            end = 1 ;
-        }
-        if( buf[i] == ',' || buf[i] == 0 ) {
-            
-            buf[i] = '\0';
-            
-            if( n == 1 ) { // This line holds the call sign
-                gfx_select_font(gfx_font_norm);
-            } else {
-                gfx_select_font(gfx_font_small);
-            }
-
-            if( n == 2 ) {
-                y_index = y_index + 16; // previous line was in big font
-            } else {
-                y_index = y_index + 12; // previous line was in small font
-            }
-
-            drawascii2(oldpoi, 10, y_index);
-            n++;
-            
-            oldpoi = buf + i + 1 ;
-        }
-        if( end ) {
-            break ;
-        }
+    gfx_select_font(gfx_font_small);
+    if( grp ) {
+        gfx_printf_pos( RX_POPUP_X_START, y_index, "%d -> TG %d", src, dst );        
+    } else {
+        gfx_printf_pos( RX_POPUP_X_START, y_index, "%d -> %d", src, dst );
     }
+    y_index += GFX_FONT_SMALL_HEIGHT ;
 
-    sprintf(buf, "%d -> %d", src, dst); // overwrite DMR id with source -> destination
-    drawascii2(buf, 10, RX_POPUP_Y_START + 12);
+    gfx_select_font(gfx_font_norm);
+    gfx_printf_pos2(RX_POPUP_X_START, y_index, 10, "%s %s", usr.callsign, usr.firstname );
+    y_index += GFX_FONT_NORML_HEIGHT; // previous line was in big font
+    
+    gfx_select_font(gfx_font_small);
+    gfx_puts_pos(RX_POPUP_X_START, y_index, usr.name );
+    y_index += GFX_FONT_SMALL_HEIGHT ; // previous line was in small font
 
+    gfx_puts_pos(RX_POPUP_X_START, y_index, usr.place );
+    y_index += GFX_FONT_SMALL_HEIGHT ;
+    
+    gfx_puts_pos(RX_POPUP_X_START, y_index, usr.state );
+    y_index += GFX_FONT_SMALL_HEIGHT ;
+    
+    gfx_puts_pos(RX_POPUP_X_START, y_index, usr.country );
+    y_index += GFX_FONT_SMALL_HEIGHT ;
+    
     gfx_select_font(gfx_font_norm);
     gfx_set_fg_color(0xff8032);
     gfx_set_bg_color(0xff000000);
-#endif //CONFIG_GRAPHICS
 }
 
 /*
-#include <stdio.h>
 #include <stdlib.h>
 
 int main(void)
@@ -272,34 +281,36 @@ void draw_statusline_hook( uint32_t r0 )
 
 void draw_alt_statusline()
 {
-    wchar_t buf[40];
-    
+    int dst;
+    int src;
+    int grp;
+
     gfx_set_fg_color(0);
     gfx_set_bg_color(0xff8032);
     gfx_select_font(gfx_font_small);
 
-    static int cnt = 0 ;
-    cnt++ ;
-    
     char mode = ' ' ;
     if( rst_voice_active ) {
         if( rst_mycall ) {
-            mode = '+' ; // on my tg            
+            mode = '*' ; // on my tg            
         } else {
             mode = '!' ; // on other tg
         }
     }
-//    wide_sprintf(buf,"d:%d %c %d", g_dst, mode, cnt );
-    wide_sprintf(buf,"d:%d %c", rst_dst, mode );
-//    wide_sprintf(buf,"d:%d %c %d:%d:%d", rst_dst, mode, rst_hdr_src, rst_hdr_dst, rst_hdr_sap );
-//    gfx_chars_to_display(buf,10,96,94);
-    gfx_chars_to_display(buf,10,96,157);
 
-//    wide_sprintf(buf,"" );
-//    wide_sprintf(buf,"%d", md380_f_4225_operatingmode & 0x7F );
-//    wide_sprintf(buf,"%d", cnt );    
-//    gfx_chars_to_display(buf,95,96,157);
-
+    user_t usr;
+    src = rst_src;
+    
+    if( src == 0 ) {
+        gfx_printf_pos2(RX_POPUP_X_START, 96, 157, "lh:");
+    } else {    
+        if( usr_find_by_dmrid(&usr, src) == 0 ) {
+            gfx_printf_pos2(RX_POPUP_X_START, 96, 157, "lh:%d->%d %c", src, rst_dst, mode);
+        } else {
+            gfx_printf_pos2(RX_POPUP_X_START, 96, 157, "lh:%s->%d %c", usr.callsign, rst_dst, mode);
+        }	
+    }
+    
     gfx_set_fg_color(0);
     gfx_set_bg_color(0xff000000);
     gfx_select_font(gfx_font_norm);
@@ -307,7 +318,7 @@ void draw_alt_statusline()
 
 void draw_datetime_row_hook()
 {
-#if defined(FW_D13_020)
+#if defined(FW_D13_020) || defined(FW_S13_020)
     if( is_netmon_visible() ) {
         return ;
     }
@@ -329,13 +340,13 @@ void display_credits()
     drawtext(L"by KK4VCZ  ", 160, 60);
     drawtext(L"and Friends", 160, 100);
 #ifdef MD380_d13_020
-    drawtext(L"@ d13.020", 160, 140);
+    drawtext(L"@ D13.020", 160, 140);
 #endif
 #ifdef MD380_d02_032
-    drawtext(L"@ d02.032", 160, 140);
+    drawtext(L"@ D02.032", 160, 140);
 #endif
 #ifdef MD380_s13_020
-    drawtext(L"@ s13.020", 160, 140);
+    drawtext(L"@ S13.020", 160, 140);
 #endif
 
     drawascii(GIT_VERSION, 160, 180);
